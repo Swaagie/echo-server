@@ -2,6 +2,8 @@
 
 Zero dependency minimalist echo server written in Rust.
 
+[![.github/workflows/build.yml](https://github.com/Swaagie/echo-server/actions/workflows/build.yml/badge.svg)](https://github.com/Swaagie/echo-server/actions/workflows/build.yml)
+
 ## Installation
 
 ```console
