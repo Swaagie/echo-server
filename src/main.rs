@@ -39,7 +39,7 @@ fn parse_parameters(args: &[String]) -> (&str, &str) {
     let mut body = "hello world";
 
     args.iter().for_each(|arg| {
-        let arg: Vec<&str> = arg.split("=").collect();
+        let arg: Vec<&str> = arg.split('=').collect();
 
         match arg[0] {
             "--port" => port = &arg[1],
@@ -52,17 +52,13 @@ fn parse_parameters(args: &[String]) -> (&str, &str) {
 }
 
 fn handle_connection(mut stream: TcpStream, body: &str) -> Result<(), std::io::Error> {
-    let mut buffer = [0; 1024];
-
-    stream.read(&mut buffer)?;
-
     let response = format!(
         "HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n{}",
         body.len(),
         body
     );
 
-    stream.write(response.as_bytes())?;
+    stream.write_all(response.as_bytes())?;
     stream.flush()
 }
 
