@@ -52,6 +52,8 @@ fn parse_parameters(args: &[String]) -> (&str, &str) {
 }
 
 fn handle_connection(mut stream: TcpStream, body: &str) -> Result<(), std::io::Error> {
+    // TODO: handle other HTTP verbs
+
     let response = format!(
         "HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n{}",
         body.len(),
