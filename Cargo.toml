@@ -1,0 +1,10 @@
+[package]
+name = "echo-server"
+version = "0.1.0"
+authors = ["Martijn Swaagman <martijn@swaagman.online>"]
+description = "Minimalistic HTTP  echo server"
+edition = "2018"
+license = "MIT"
+keywords = ["echo", "server", "simple", "minimalistic", "zero-dependencies"]
+
+[dependencies]
