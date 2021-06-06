@@ -6,5 +6,7 @@ description = "Minimalistic HTTP  echo server"
 edition = "2018"
 license = "MIT"
 keywords = ["echo", "server", "simple", "minimalistic", "zero-dependencies"]
-
-[dependencies]
+exclude = [
+  ".github",
+  "Dockerfile"
+]
