@@ -1,109 +1,106 @@
-use std::{env, thread};
-use std::io::prelude::*;
-use std::net::TcpListener;
-use std::net::TcpStream;
+use std::env;
+use std::net::SocketAddr;
+use std::convert::Infallible;
 
-fn main() -> Result<(), std::io::Error> {
+use hyper::{Body, Request, Response, Server, Method, StatusCode};
+use hyper::service::{make_service_fn, service_fn};
+
+#[tokio::main]
+async fn main() {
     let args: Vec<String> = env::args().collect();
-    let (port, _) = parse_parameters(&args);
+    let port = get_port(&args);
 
-    let address = format!("127.0.0.1:{}", port);
-    let listener = TcpListener::bind(address)?;
-    println!("Echo server listening on port {}", port);
-
-    for stream in listener.incoming() {
-        let stream = stream?;
-        let address = stream.peer_addr()?;
-
-        // TODO: Implement max concurrency/threads, potential fork bomb
-        thread::spawn(move || -> Result<(), std::io::Error> {
-            // TODO: pass body value from main thread.
-            let args: Vec<String> = env::args().collect();
-            let (_, body) = parse_parameters(&args);
-
-            match handle_connection(stream, body) {
-                Ok(_) => println!("Handled request from {}", address),
-                Err(err) => println!("Unable to handle request {}", err)
-            };
-
-            Ok(())
-        });
-    }
-
-    println!("{:?}",args);
-    Ok(())
-}
-
-fn parse_parameters(args: &[String]) -> (&str, &str) {
-    let mut port = "8080";
-    let mut body = "hello world";
-
-    args.iter().for_each(|arg| {
-        let arg: Vec<&str> = arg.split('=').collect();
-
-        match arg[0] {
-            "--port" => port = &arg[1],
-            "--body" => body = &arg[1],
-            _ => ()
-        }
-    });
-
-    (port, body)
-}
-
-fn handle_connection(mut stream: TcpStream, body: &str) -> Result<(), std::io::Error> {
-    // TODO: handle other HTTP verbs
-
-    let response = format!(
-        "HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n{}",
-        body.len(),
-        body
+    let address = SocketAddr::from(([127, 0, 0, 1], port));
+    let server = Server::bind(&address).serve(
+        make_service_fn(|_server| async {
+            Ok::<_, Infallible>(service_fn(handle_request))
+        })
     );
 
-    stream.write_all(response.as_bytes())?;
-    stream.flush()
+    println!("Echo server listening on port {}", port);
+    if let Err(e) = server.await {
+        eprintln!("server error: {}", e);
+    }
 }
 
-#[test]
-fn test_parse_parameters() -> Result<(), std::string::FromUtf8Error> {
-    let args = vec![
-        String::from("exec"),
-        String::from("--port=80"),
-        String::from("--body=hello"),
-    ];
-    let (port, body) = parse_parameters(&args);
+fn get_port(args: &[String]) -> u16 {
+    let mut port = 8080;
 
-    assert_eq!(port, "80");
-    assert_eq!(body, "hello");
+    if args.len() == 2 {
+        port = args[1].parse::<u16>().expect("Provide valid port");
+    }
 
-    // Single parameter
-    let args = vec![String::from("exec"), String::from("--port=8081")];
-    let (port, body) = parse_parameters(&args);
-
-    assert_eq!(port, "8081");
-    assert_eq!(body, "hello world");
-
-    // Invert order
-    let args = vec![
-        String::from("exec"),
-        String::from("--body=first"),
-        String::from("--port=8082"),
-    ];
-    let (port, body) = parse_parameters(&args);
-
-    assert_eq!(port, "8082");
-    assert_eq!(body, "first");
-
-    Ok(())
+    port
 }
 
-#[test]
-fn test_parse_parameters_with_defaults() -> Result<(), std::string::FromUtf8Error> {
-    let args = vec![String::from("exec"), String::from(""), String::from("")];
-    let (port, body) = parse_parameters(&args);
+async fn handle_request(req: Request<Body>) -> Result<Response<Body>, Infallible> {
+    let mut response = Response::new(Body::empty());
 
-    assert_eq!(port, "8080");
-    assert_eq!(body, "hello world");
 
-    Ok(())
+    match (req.method(), req.uri().path()) {
+        (&Method::GET, "/") => {
+            *response.body_mut() = Body::from("Use {POST, PUT, PATCH} to echo");
+        },
+        (&Method::POST, "/") => {
+            *response.body_mut() = req.into_body();
+        },
+        (&Method::PUT, "/") => {
+            *response.body_mut() = req.into_body();
+        },
+        (&Method::PATCH, "/") => {
+            *response.body_mut() = req.into_body();
+        },
+        (&Method::OPTIONS, "/") => {
+            *response.status_mut() = StatusCode::OK;
+        },
+        _ => {
+            *response.status_mut() = StatusCode::NOT_FOUND;
+        },
+    };
+
+    Ok(response)
 }
+
+// #[test]
+// fn test_parse_parameters() -> Result<(), std::string::FromUtf8Error> {
+//     let args = vec![
+//         String::from("exec"),
+//         String::from("--port=80"),
+//         String::from("--body=hello"),
+//     ];
+//     let (port, body) = parse_parameters(&args);
+
+//     assert_eq!(port, "80");
+//     assert_eq!(body, "hello");
+
+//     // Single parameter
+//     let args = vec![String::from("exec"), String::from("--port=8081")];
+//     let (port, body) = parse_parameters(&args);
+
+//     assert_eq!(port, "8081");
+//     assert_eq!(body, "hello world");
+
+//     // Invert order
+//     let args = vec![
+//         String::from("exec"),
+//         String::from("--body=first"),
+//         String::from("--port=8082"),
+//     ];
+//     let (port, body) = parse_parameters(&args);
+
+//     assert_eq!(port, "8082");
+//     assert_eq!(body, "first");
+
+//     Ok(())
+// }
+
+// #[test]
+// fn test_parse_parameters_with_defaults() -> Result<(), std::string::FromUtf8Error> {
+//     let args = vec![String::from("exec"), String::from(""), String::from("")];
+//     let (port, body) = parse_parameters(&args);
+
+//     assert_eq!(port, "8080");
+//     assert_eq!(body, "hello world");
+
+//     Ok(())
+// }

@@ -1,6 +1,6 @@
 # Echo server
 
-Zero dependency echo server written in Rust.
+HTTP echo server, that's it.
 
 [![.github/workflows/build.yml](https://github.com/Swaagie/echo-server/actions/workflows/build.yml/badge.svg)](https://github.com/Swaagie/echo-server/actions/workflows/build.yml)
 
@@ -12,18 +12,29 @@ cargo install echo-server
 
 ## Usage
 
+The HTTP server listens to `port: 8080` by default.
+
 ```console
-echo-server [--port=1337] [--body="your preferred response message"]
+echo-server [8080]
 ```
 
-The server has defaults:
+> All HTTP verbs are supported.
 
-```yaml
-- port: 8080
-- body: "hello world"
+#### `GET` request
+
+```console
+curl -X POST -H "Content-Type: application/json" -d '{"hello": "world"}' localhost:8080
 ```
 
-> You can also us the build docker image from docker hub.
+#### `POST` request
+
+```console
+curl -X POST -H "Content-Type: application/json" -d '{"hello": "world"}' localhost:8080
+```
+
+## Docker
+
+TODO
 
 ## Contributing
 
