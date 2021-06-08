@@ -23,7 +23,7 @@ echo-server [8080]
 #### `GET` request
 
 ```console
-curl -X POST -H "Content-Type: application/json" -d '{"hello": "world"}' localhost:8080
+curl -X GET localhost:8080
 ```
 
 #### `POST` request
