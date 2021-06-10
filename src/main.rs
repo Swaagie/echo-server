@@ -10,10 +10,17 @@ async fn main() {
     let args: Vec<String> = env::args().collect();
     let port = get_port(&args);
 
-    let address = SocketAddr::from(([127, 0, 0, 1], port));
+    let address = SocketAddr::from(([0, 0, 0, 0], port));
     let server = Server::bind(&address).serve(make_service_fn(|_server| async {
         Ok::<_, Infallible>(service_fn(handle_request))
     }));
+
+    // Allow server to be killed.
+    let server = server.with_graceful_shutdown(async {
+        tokio::signal::ctrl_c()
+            .await
+            .expect("Failed to add signal handler")
+    });
 
     println!("Echo server listening on port {}", port);
     if let Err(e) = server.await {

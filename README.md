@@ -34,7 +34,24 @@ curl -X POST -H "Content-Type: application/json" -d '{"hello": "world"}' localho
 
 ## Docker
 
-TODO
+You can run a precompiled image from Docker hub:
+
+```console
+docker run --rm -p 8080:8080 --name echo swaagie/echo-server:latest
+```
+
+Or build the image local:
+
+```console
+docker build -t echo-server .
+docker run --rm -p 8080:8080 --name echo echo-server
+```
+
+Listen on a different port
+
+```console
+docker run --rm -p 8081:8081 --name echo echo-server 8081
+```
 
 ## Contributing
 
@@ -44,4 +61,7 @@ Please make sure to update tests as appropriate.
 
 ## License
 
-[MIT](https://choosealicense.com/licenses/mit/)
+[MIT]
+
+[MIT]: https://choosealicense.com/licenses/mit/
+[hub]: https://hub.docker.com/repository/docker/swaagie/echo-server
