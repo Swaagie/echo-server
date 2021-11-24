@@ -1,6 +1,6 @@
 [package]
 name = "echo-server"
-version = "1.1.0"
+version = "1.2.0"
 authors = ["Martijn Swaagman <martijn@swaagman.online>"]
 description = "HTTP echo server"
 edition = "2018"
