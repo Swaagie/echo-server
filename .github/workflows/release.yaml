@@ -19,7 +19,7 @@ jobs:
         uses: actions-rs/toolchain@v1
         with:
           profile: minimal
-          toolchain: stables
+          toolchain: stable
           override: true
       - name: Install Node.JS
         uses: actions/setup-node@v2
