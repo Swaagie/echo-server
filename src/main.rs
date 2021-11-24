@@ -1,13 +1,29 @@
 use std::convert::Infallible;
 use std::env;
 use std::net::SocketAddr;
+use std::num::ParseIntError;
 
 use hyper::service::{make_service_fn, service_fn};
 use hyper::{Body, Method, Request, Response, Server, StatusCode};
 
+#[derive(PartialEq, Debug)]
+struct ParseError {}
+
+#[derive(PartialEq, Debug)]
+enum InvalidArgument {
+    Parse(ParseError),
+    ParseInt(ParseIntError)
+}
+
+impl From<ParseIntError> for InvalidArgument {
+    fn from(err: ParseIntError) -> Self {
+        InvalidArgument::ParseInt(err)
+    }
+}
+
 #[tokio::main]
 async fn main() {
-    let port = get_port();
+    let port = get_port(&env::args().collect::<Vec<String>>()).unwrap_or(8080);
     let address = SocketAddr::from(([0, 0, 0, 0], port));
     let server = Server::bind(&address).serve(make_service_fn(|_server| async {
         Ok::<_, Infallible>(service_fn(handle_request))
@@ -22,38 +38,29 @@ async fn main() {
 
     println!("Echo server listening on port {}", port);
     if let Err(e) = server.await {
-        eprintln!("server error: {}", e);
+        eprintln!("Server error: {}", e);
     }
 }
 
-fn get_argument(args: &[String], name: &str) -> Option<String> {
-    for arg in args.iter() {
-        let arg: Vec<&str> = arg.split('=').collect();
-
-        if arg[0] == name {
-            return Some(arg[1].to_owned());
-        }
-    }
-
-    None
-}
-
-fn get_port() -> u16 {
-    let args: Vec<String> = env::args().collect();
-
-    match get_argument(&args, "--port") {
-        Some(p) => p.parse::<u16>().expect("Provide valid port"),
-        None => 8080,
+fn get_argument(name: &str, args: &[String]) -> Option<String> {
+    match args.iter().find(|arg| arg.contains(name)) {
+        Some(arg) => arg.split('=').map(|v| v.to_owned()).collect::<Vec<String>>().pop(),
+        _ => None
     }
 }
 
-fn get_body() -> String {
-    let args: Vec<String> = env::args().collect();
+fn get_port(args: &[String]) -> Result<u16, InvalidArgument> {
+    let port = get_argument("--port", args);
 
-    match get_argument(&args, "--body") {
-        Some(s) => s,
-        None => String::from("Use {POST, PUT, PATCH} to echo"),
+    match port {
+        Some(p) => Ok(p.parse::<u16>()?),
+        None => Err(InvalidArgument::Parse(ParseError {}))
     }
+}
+
+fn get_body(args: &[String]) -> Result<String, InvalidArgument> {
+    get_argument("--body", args)
+        .ok_or(InvalidArgument::Parse(ParseError {}))
 }
 
 async fn handle_request(req: Request<Body>) -> Result<Response<Body>, Infallible> {
@@ -61,14 +68,16 @@ async fn handle_request(req: Request<Body>) -> Result<Response<Body>, Infallible
     let echo_headers = response.headers_mut();
     let headers = req.headers();
 
-    // Echo HTTP headers
+    // Echo HTTP headers`
     headers.iter().for_each(|(name, value)| {
         echo_headers.insert(name, value.clone());
     });
 
     match (req.method(), req.uri().path()) {
         (&Method::GET, "/") => {
-            *response.body_mut() = Body::from(get_body());
+            *response.body_mut() = Body::from(
+                get_body(&env::args().collect::<Vec<String>>()).unwrap_or_else(|_| "".to_owned())
+            );
         }
         (&Method::POST, "/") => {
             *response.body_mut() = req.into_body();
@@ -90,16 +99,29 @@ async fn handle_request(req: Request<Body>) -> Result<Response<Body>, Infallible
     Ok(response)
 }
 
-#[test]
-fn test_get_body() -> Result<(), std::string::FromUtf8Error> {
-    assert_eq!(get_body(), "Use {POST, PUT, PATCH} to echo");
+#[cfg(test)]
+mod test {
+    use super::*;
 
-    Ok(())
-}
+    #[test]
+    fn test_get_body() {
+        let args = ["--body=hello world", "body=bad", "--body=42"].map(|v| v.to_string());
 
-#[test]
-fn test_get_port() -> Result<(), std::string::FromUtf8Error> {
-    assert_eq!(get_port(), 8080);
+        assert_eq!(get_body(&args[..]), Ok("hello world".to_owned()));
+        assert_eq!(get_body(&args[1..]), Ok("42".to_owned()));
+    }
 
-    Ok(())
+    #[test]
+    fn test_get_port() {
+        let args = ["--port=1337", "--port=8081"].map(|v| v.to_string());
+
+        assert_eq!(get_port(&args[..]), Ok(1337));
+        assert_eq!(get_port(&args[1..]), Ok(8081));
+    }
+
+    #[test]
+    fn test_get_argument() {
+        let args = ["--port=8080", "port=8081"].map(|v| v.to_string());
+        assert_eq!(get_argument("--port", &args[..]), Some("8080".to_string()));
+    }
 }
