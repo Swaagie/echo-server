@@ -7,9 +7,7 @@ use hyper::{Body, Method, Request, Response, Server, StatusCode};
 
 #[tokio::main]
 async fn main() {
-    let args: Vec<String> = env::args().collect();
-    let port = get_port(&args);
-
+    let port = get_port();
     let address = SocketAddr::from(([0, 0, 0, 0], port));
     let server = Server::bind(&address).serve(make_service_fn(|_server| async {
         Ok::<_, Infallible>(service_fn(handle_request))
@@ -28,14 +26,34 @@ async fn main() {
     }
 }
 
-fn get_port(args: &[String]) -> u16 {
-    let mut port = 8080;
+fn get_argument(args: &[String], name: &str) -> Option<String> {
+    for arg in args.iter() {
+        let arg: Vec<&str> = arg.split('=').collect();
 
-    if args.len() == 2 {
-        port = args[1].parse::<u16>().expect("Provide valid port");
+        if arg[0] == name {
+            return Some(arg[1].to_owned());
+        }
     }
 
-    port
+    None
+}
+
+fn get_port() -> u16 {
+    let args: Vec<String> = env::args().collect();
+
+    match get_argument(&args, "--port") {
+        Some(p) => p.parse::<u16>().expect("Provide valid port"),
+        None => 8080,
+    }
+}
+
+fn get_body() -> String {
+    let args: Vec<String> = env::args().collect();
+
+    match get_argument(&args, "--body") {
+        Some(s) => s,
+        None => String::from("Use {POST, PUT, PATCH} to echo"),
+    }
 }
 
 async fn handle_request(req: Request<Body>) -> Result<Response<Body>, Infallible> {
@@ -49,7 +67,9 @@ async fn handle_request(req: Request<Body>) -> Result<Response<Body>, Infallible
     });
 
     match (req.method(), req.uri().path()) {
-        (&Method::GET, "/") => {}
+        (&Method::GET, "/") => {
+            *response.body_mut() = Body::from(get_body());
+        }
         (&Method::POST, "/") => {
             *response.body_mut() = req.into_body();
         }
@@ -71,19 +91,15 @@ async fn handle_request(req: Request<Body>) -> Result<Response<Body>, Infallible
 }
 
 #[test]
-fn test_get_port() -> Result<(), std::string::FromUtf8Error> {
-    let args = vec![String::from("exec"), String::from("80")];
-
-    assert_eq!(get_port(&args), 80);
+fn test_get_body() -> Result<(), std::string::FromUtf8Error> {
+    assert_eq!(get_body(), "Use {POST, PUT, PATCH} to echo");
 
     Ok(())
 }
 
 #[test]
-fn test_get_port_with_defaults() -> Result<(), std::string::FromUtf8Error> {
-    let args = vec![String::from("exec")];
-
-    assert_eq!(get_port(&args), 8080);
+fn test_get_port() -> Result<(), std::string::FromUtf8Error> {
+    assert_eq!(get_port(), 8080);
 
     Ok(())
 }
