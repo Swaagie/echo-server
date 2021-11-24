@@ -23,13 +23,14 @@ echo-server [8080]
 #### `GET` request
 
 ```console
-curl -X GET localhost:8080
+curl -vvv -X GET localhost:8080
+curl -vvv -X GET -H "x-random-header: test" localhost:8080
 ```
 
 #### `POST` request
 
 ```console
-curl -X POST -H "Content-Type: application/json" -d '{"hello": "world"}' localhost:8080
+curl -vvv -X POST -H "Content-Type: application/json" -d '{"hello": "world"}' localhost:8080
 ```
 
 ## Docker

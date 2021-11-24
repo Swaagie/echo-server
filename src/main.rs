@@ -40,11 +40,16 @@ fn get_port(args: &[String]) -> u16 {
 
 async fn handle_request(req: Request<Body>) -> Result<Response<Body>, Infallible> {
     let mut response = Response::new(Body::empty());
+    let echo_headers = response.headers_mut();
+    let headers = req.headers();
+
+    // Echo HTTP headers
+    headers.iter().for_each(|(name, value)| {
+        echo_headers.insert(name, value.clone());
+    });
 
     match (req.method(), req.uri().path()) {
-        (&Method::GET, "/") => {
-            *response.body_mut() = Body::from("Use {POST, PUT, PATCH} to echo");
-        }
+        (&Method::GET, "/") => {}
         (&Method::POST, "/") => {
             *response.body_mut() = req.into_body();
         }
