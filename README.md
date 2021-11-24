@@ -15,7 +15,7 @@ cargo install echo-server
 Defaults:
 - HTTP server listens to `0.0.0.0:8080`.
 - HTTP request headers return with the response.
-- GET requests return with no body content.
+- GET requests have no body content.
 
 ```console
 echo-server [--port=8080] [--body="Custom GET response body"]
@@ -54,7 +54,7 @@ docker run --rm -p 8080:8080 --name echo echo-server
 Listen on a different port:
 
 ```console
-docker run --rm -p 8081:8081 --name echo echo-server --port 8081
+docker run --rm -p 8081:8081 --name echo echo-server --port=8081
 ```
 
 ## Contributing
