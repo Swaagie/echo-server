@@ -4,6 +4,7 @@ use std::net::SocketAddr;
 use std::num::ParseIntError;
 
 use hyper::service::{make_service_fn, service_fn};
+use hyper::header::{HeaderValue, CONTENT_LENGTH};
 use hyper::{Body, Method, Request, Response, Server, StatusCode};
 
 #[derive(PartialEq, Debug)]
@@ -75,9 +76,13 @@ async fn handle_request(req: Request<Body>) -> Result<Response<Body>, Infallible
 
     match (req.method(), req.uri().path()) {
         (&Method::GET, "/") => {
-            *response.body_mut() = Body::from(
-                get_body(&env::args().collect::<Vec<String>>()).unwrap_or_else(|_| "".to_owned())
-            );
+            let body = get_body(&env::args().collect::<Vec<String>>()).unwrap_or_else(|_| "".to_owned());
+            let content_length = HeaderValue::from_str(
+                &body.as_bytes().len().to_string()
+            ).unwrap_or_else(|_| HeaderValue::from_static("0"));
+
+            echo_headers.insert(CONTENT_LENGTH, content_length);
+            *response.body_mut() = Body::from(body);
         }
         (&Method::POST, "/") => {
             *response.body_mut() = req.into_body();
