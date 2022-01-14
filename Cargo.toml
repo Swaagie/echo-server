@@ -1,9 +1,9 @@
 [package]
 name = "echo-server"
-version = "1.2.0"
+version = "1.2.1"
 authors = ["Martijn Swaagman <martijn@swaagman.online>"]
 description = "HTTP echo server"
-edition = "2018"
+edition = "2021"
 license = "MIT"
 keywords = ["echo", "server", "http"]
 exclude = [
