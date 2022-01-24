@@ -18,7 +18,7 @@ Defaults:
 - GET requests have no body content.
 
 ```console
-echo-server [--port=8080] [--body="Custom GET response body"]
+echo-server [-p|--port=8080] [-b|--body="Custom GET response body"]
 ```
 
 > All HTTP verbs are supported.
