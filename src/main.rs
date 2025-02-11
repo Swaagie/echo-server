@@ -2,8 +2,8 @@ use std::convert::Infallible;
 use std::net::SocketAddr;
 use std::str::FromStr;
 
-use hyper::service::{make_service_fn, service_fn};
 use hyper::header::{HeaderName, HeaderValue, CONTENT_LENGTH};
+use hyper::service::{make_service_fn, service_fn};
 use hyper::{Body, Method, Request, Response, Server, StatusCode};
 
 use structopt::StructOpt;
@@ -62,7 +62,10 @@ async fn handle_request(req: Request<Body>) -> Result<Response<Body>, Infallible
     if let Some(overwrite_headers) = args.header {
         for key_value in overwrite_headers {
             if let Some(pos) = key_value.find(':') {
-                match (HeaderName::from_str(&key_value[..pos]), HeaderValue::from_str(&key_value[pos + 1..])) {
+                match (
+                    HeaderName::from_str(&key_value[..pos]),
+                    HeaderValue::from_str(&key_value[pos + 1..]),
+                ) {
                     (Ok(key), Ok(value)) => {
                         echo_headers.insert(key, value);
                     }
@@ -76,9 +79,8 @@ async fn handle_request(req: Request<Body>) -> Result<Response<Body>, Infallible
     match (req.method(), req.uri().path()) {
         (&Method::GET, "/") => {
             let body = args.body.unwrap_or_default();
-            let content_length = HeaderValue::from_str(
-                &body.as_bytes().len().to_string()
-            ).unwrap_or_else(|_| HeaderValue::from_static("0"));
+            let content_length = HeaderValue::from_str(&body.as_bytes().len().to_string())
+                .unwrap_or_else(|_| HeaderValue::from_static("0"));
 
             echo_headers.insert(CONTENT_LENGTH, content_length);
             *response.body_mut() = Body::from(body);
