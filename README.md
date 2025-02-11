@@ -18,10 +18,24 @@ Defaults:
 - GET requests have no body content.
 
 ```console
-echo-server [-p|--port=8080] [-b|--body="Custom GET response body"]
+echo-server [-p|--port=8080]
 ```
 
 > All HTTP verbs are supported.
+
+### Configuration options
+
+Set static response body.
+
+```console
+echo server [-b|--body="Custom GET response body"] 
+```
+
+Set (repeated) static response headers `key:value` pairs.
+
+```console
+echo server [-h|--header="key1:value1"] [-h|--header="key2:value2"]
+```
 
 #### `GET` request
 

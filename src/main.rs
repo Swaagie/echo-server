@@ -1,14 +1,12 @@
 use std::convert::Infallible;
 use std::net::SocketAddr;
+use std::str::FromStr;
 
 use hyper::service::{make_service_fn, service_fn};
-use hyper::header::{HeaderValue, CONTENT_LENGTH};
+use hyper::header::{HeaderName, HeaderValue, CONTENT_LENGTH};
 use hyper::{Body, Method, Request, Response, Server, StatusCode};
 
 use structopt::StructOpt;
-
-#[derive(PartialEq, Debug)]
-struct ParseError {}
 
 /// Find acronym meaning.
 #[derive(Debug, StructOpt)]
@@ -21,6 +19,10 @@ struct Cli {
     /// Context to search in
     #[structopt(short, long)]
     body: Option<String>,
+
+    /// Headers to add in the response, repeated key:value pairs
+    #[structopt(short, long)]
+    header: Option<Vec<String>>,
 }
 
 #[tokio::main]
@@ -55,11 +57,25 @@ async fn handle_request(req: Request<Body>) -> Result<Response<Body>, Infallible
         echo_headers.insert(name, value.clone());
     });
 
+    // Add static configured response headers
+    let args = Cli::from_args();
+    if let Some(overwrite_headers) = args.header {
+        for key_value in overwrite_headers {
+            if let Some(pos) = key_value.find(':') {
+                match (HeaderName::from_str(&key_value[..pos]), HeaderValue::from_str(&key_value[pos + 1..])) {
+                    (Ok(key), Ok(value)) => {
+                        echo_headers.insert(key, value);
+                    }
+                    _ => {}
+                }
+            }
+        }
+    }
+
     // Handle each HTTP verb
     match (req.method(), req.uri().path()) {
         (&Method::GET, "/") => {
-            let args = Cli::from_args();
-            let body = args.body.unwrap_or_else(|| String::from(""));
+            let body = args.body.unwrap_or_default();
             let content_length = HeaderValue::from_str(
                 &body.as_bytes().len().to_string()
             ).unwrap_or_else(|_| HeaderValue::from_static("0"));
