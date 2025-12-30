@@ -1,6 +1,6 @@
 # Echo server
 
-HTTP echo server, that's it.
+HTTP2 echo server that echoes request headers and body.
 
 [![.github/workflows/build.yaml](https://github.com/Swaagie/echo-server/actions/workflows/build.yaml/badge.svg)](https://github.com/Swaagie/echo-server/actions/workflows/build.yaml)
 
@@ -12,74 +12,54 @@ cargo install echo-server
 
 ## Usage
 
-Defaults:
-- HTTP server listens to `0.0.0.0:8080`.
-- HTTP request headers return with the response.
-- GET requests have no body content.
-
 ```console
-echo-server [-p|--port=8080]
+echo-server [-p|--port=8080] [--config=config.toml]
 ```
 
-> All HTTP verbs are supported.
+**Behavior:**
+- GET: Returns request headers as response body
+- POST/PUT/PATCH: Returns request headers + blank line + request body
 
-### Configuration options
-
-Set static response body.
-
+**Logging:**
+Enable debug logging with the `RUST_LOG` environment variable:
 ```console
-echo server [-b|--body="Custom GET response body"] 
+RUST_LOG=debug echo-server
+# Or for just this crate:
+RUST_LOG=echo_server=debug echo-server
 ```
 
-Set (repeated) static response headers `key:value` pairs.
-
+**Example:**
 ```console
-echo server [-h|--header="key1:value1"] [-h|--header="key2:value2"]
+curl -X GET -H "x-test: value" localhost:8080
+# Response body: headers formatted as "header-name: value"
 ```
 
-#### `GET` request
+## Configuration
 
+See [`example/README.md`](example/README.md) for configuration details and examples.
+
+**Quick start:**
 ```console
-curl -vvv -X GET localhost:8080
-curl -vvv -X GET -H "x-random-header: test" localhost:8080
+cp example/config.toml config.toml
+echo-server
 ```
 
-#### `POST` request
+**CLI flags:**
+- `-p, --port <port>`: Port to listen on (default: 8080)
+- `--config <path>`: Path to TOML config file (default: config.toml)
 
-```console
-curl -vvv -X POST -H "Content-Type: application/json" -d '{"hello": "world"}' localhost:8080
-```
+**Config file options:**
+- `port`: Port number (optional, defaults to 8080)
+- `[tls]`: TLS/mTLS configuration (server_cert, server_key, ca_cert)
 
 ## Docker
 
-You can run a precompiled image from Docker hub:
-
 ```console
-docker run --rm -p 8080:8080 --name echo swaagie/echo-server:latest
+docker run --rm -p 8080:8080 swaagie/echo-server:latest
 ```
 
-Or build the image local:
-
-```console
-docker build -t echo-server .
-docker run --rm -p 8080:8080 --name echo echo-server
-```
-
-Listen on a different port:
-
-```console
-docker run --rm -p 8081:8081 --name echo echo-server --port=8081
-```
-
-## Contributing
-
-Pull requests are welcome. For major changes, please open an issue first to discuss what you would like to change.
-
-Please make sure to update tests as appropriate.
+See [`example/README.md`](example/README.md) for Docker examples with TLS.
 
 ## License
 
-[MIT]
-
-[MIT]: https://choosealicense.com/licenses/mit/
-[hub]: https://hub.docker.com/repository/docker/swaagie/echo-server
+[MIT](https://choosealicense.com/licenses/mit/)

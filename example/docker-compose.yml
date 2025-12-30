@@ -1,0 +1,30 @@
+version: '3.8'
+
+services:
+  echo-server:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./config.toml:/server/config.toml:ro
+    environment:
+      RUST_LOG: debug
+    command: ["--config", "/server/config.toml"]
+    restart: unless-stopped
+
+  # Example with mTLS enabled
+  # Uncomment and configure paths to your certificates
+  # echo-server-mtls:
+  #   image: swaagie/echo-server:latest
+  #   ports:
+  #     - "8443:8443"
+  #   volumes:
+  #     - ./config.toml:/server/config.toml:ro
+  #     - /path/to/certs:/certs:ro
+  #   command:
+  #     - "--port=8443"
+  #     - "--config=/server/config.toml"
+  #   restart: unless-stopped
+
