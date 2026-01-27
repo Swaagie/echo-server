@@ -59,6 +59,11 @@ where
     // Set status code
     *response.status_mut() = status;
 
+    // Echo request headers in response headers
+    for (name, value) in headers.iter() {
+        response.headers_mut().insert(name.clone(), value.clone());
+    }
+
     // Set response body and content length if we have a body
     if let Some(body) = response_body {
         let content_length = HeaderValue::from_str(&body.len().to_string())
