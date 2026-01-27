@@ -1,6 +1,6 @@
-use std::path::{Path, PathBuf};
-use serde::Deserialize;
 use clap::Parser;
+use serde::Deserialize;
+use std::path::{Path, PathBuf};
 
 /// Protocol selection for the server
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -24,7 +24,10 @@ impl Protocol {
             "h2" => Ok(Protocol::H2),
             "h3" => Ok(Protocol::H3),
             "auto" => Ok(Protocol::Auto),
-            _ => Err(format!("Unknown protocol: {}. Valid options: h2c, h2, h3, auto", s)),
+            _ => Err(format!(
+                "Unknown protocol: {}. Valid options: h2c, h2, h3, auto",
+                s
+            )),
         }
     }
 }
@@ -112,9 +115,8 @@ pub fn load_config_file(path: &str) -> Result<Option<FileConfig>, Box<dyn std::e
     }
 
     let contents = std::fs::read_to_string(path)?;
-    let config: FileConfig = toml::from_str(&contents).map_err(|e| {
-        format!("Failed to parse TOML config file '{}': {}", path, e)
-    })?;
+    let config: FileConfig = toml::from_str(&contents)
+        .map_err(|e| format!("Failed to parse TOML config file '{}': {}", path, e))?;
     Ok(Some(config))
 }
 
@@ -129,8 +131,7 @@ fn resolve_path(config_file_path: &str, path: &str) -> PathBuf {
         path.to_path_buf()
     } else {
         // Get the directory containing the config file
-        let config_dir = config_path.parent()
-            .unwrap_or_else(|| Path::new("."));
+        let config_dir = config_path.parent().unwrap_or_else(|| Path::new("."));
         config_dir.join(path)
     }
 }
@@ -147,7 +148,7 @@ fn resolve_tls_paths(config_file_path: &str, tls: &mut TlsConfig) {
         tls.ca_cert = Some(
             resolve_path(config_file_path, ca_cert)
                 .to_string_lossy()
-                .to_string()
+                .to_string(),
         );
     }
 }
@@ -172,9 +173,10 @@ fn validate_tls_config(tls: &TlsConfig) -> Result<(), Box<dyn std::error::Error>
 
     // Check CA certificate if client cert validation is required
     if tls.require_client_certs {
-        let ca_cert = tls.ca_cert.as_ref().ok_or(
-            "CA certificate is required when require_client_certs is true"
-        )?;
+        let ca_cert = tls
+            .ca_cert
+            .as_ref()
+            .ok_or("CA certificate is required when require_client_certs is true")?;
 
         if !Path::new(ca_cert).exists() {
             return Err(format!("CA certificate file not found: {}", ca_cert).into());
@@ -214,9 +216,11 @@ pub fn merge_config(cli: Cli) -> Result<AppConfig, Box<dyn std::error::Error>> {
     };
 
     Ok(AppConfig {
-        port: cli.port.or(file_config.as_ref().and_then(|c| c.port)).unwrap_or(8080),
+        port: cli
+            .port
+            .or(file_config.as_ref().and_then(|c| c.port))
+            .unwrap_or(8080),
         tls,
         protocol,
     })
 }
-

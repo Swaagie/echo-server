@@ -1,12 +1,12 @@
-use std::net::SocketAddr;
-use hyper::service::service_fn;
-use hyper_util::rt::{TokioIo, TokioExecutor};
-use tokio::net::TcpListener;
-use tokio_rustls::TlsAcceptor;
+use crate::config::TlsConfig;
 use crate::handler::handle_request;
 use crate::tls::create_tls_config;
-use crate::config::TlsConfig;
+use hyper::service::service_fn;
+use hyper_util::rt::{TokioExecutor, TokioIo};
 use log::debug;
+use std::net::SocketAddr;
+use tokio::net::TcpListener;
+use tokio_rustls::TlsAcceptor;
 
 pub async fn serve_h2c(
     address: SocketAddr,
@@ -100,4 +100,3 @@ pub async fn serve_h2(
 
     Ok(())
 }
-

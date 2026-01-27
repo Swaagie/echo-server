@@ -1,21 +1,21 @@
 #[cfg(feature = "http3")]
-use std::net::SocketAddr;
+use crate::config::TlsConfig;
 #[cfg(feature = "http3")]
 use crate::handler::handle_request;
 #[cfg(feature = "http3")]
 use crate::tls::create_quic_server_config;
 #[cfg(feature = "http3")]
-use crate::config::TlsConfig;
-#[cfg(feature = "http3")]
-use hyper::Request;
-#[cfg(feature = "http3")]
 use http_body_util::Full;
+#[cfg(feature = "http3")]
+use hyper::body::Buf;
 #[cfg(feature = "http3")]
 use hyper::body::Bytes;
 #[cfg(feature = "http3")]
+use hyper::Request;
+#[cfg(feature = "http3")]
 use log::debug;
 #[cfg(feature = "http3")]
-use hyper::body::Buf;
+use std::net::SocketAddr;
 
 #[cfg(feature = "http3")]
 pub async fn serve_h3(
@@ -23,9 +23,9 @@ pub async fn serve_h3(
     tls_config: &TlsConfig,
     shutdown: impl std::future::Future<Output = ()> + Send + 'static,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    use quinn::Endpoint;
-    use h3_quinn::Connection;
     use h3::server::Connection as H3Connection;
+    use h3_quinn::Connection;
+    use quinn::Endpoint;
     use tokio::sync::oneshot;
 
     debug!("Starting HTTP/3 over QUIC server on {}", address);

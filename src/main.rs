@@ -1,16 +1,16 @@
 mod config;
 mod handler;
-mod tls;
 mod http2;
+mod tls;
 
 #[cfg(feature = "http3")]
 mod http3;
 
-use std::net::SocketAddr;
-use config::{merge_config, Protocol};
-use config::Cli;
 use clap::Parser;
+use config::Cli;
+use config::{merge_config, Protocol};
 use log::debug;
+use std::net::SocketAddr;
 
 #[tokio::main]
 async fn main() {
@@ -93,7 +93,7 @@ async fn main() {
                 if tls_config.require_client_certs {
                     debug!("mTLS enabled: client certificates required");
                 }
-                 let shutdown_h2 = async {
+                let shutdown_h2 = async {
                     tokio::signal::ctrl_c()
                         .await
                         .expect("Failed to add signal handler")
@@ -143,20 +143,23 @@ async fn main() {
 #[cfg(test)]
 mod test {
     use super::*;
-    use std::fs;
-    use std::path::PathBuf;
+    use handler::{format_headers, handle_request};
     use http_body_util::{Empty, Full};
+    use hyper::body::Bytes;
     use hyper::header::HeaderValue;
     use hyper::{Method, Request};
-    use hyper::body::Bytes;
-    use handler::{format_headers, handle_request};
+    use std::fs;
+    use std::path::PathBuf;
 
     fn create_temp_file(contents: &str) -> PathBuf {
         let temp_dir = std::env::temp_dir();
-        let file_name = format!("echo-server-test-{}.toml", std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_nanos());
+        let file_name = format!(
+            "echo-server-test-{}.toml",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        );
         let file_path = temp_dir.join(file_name);
 
         fs::write(&file_path, contents).unwrap();
@@ -188,10 +191,8 @@ mod test {
             hyper::header::CONTENT_TYPE,
             HeaderValue::from_static("text/plain"),
         );
-        req.headers_mut().insert(
-            "x-test-header",
-            HeaderValue::from_static("test-value"),
-        );
+        req.headers_mut()
+            .insert("x-test-header", HeaderValue::from_static("test-value"));
         *req.method_mut() = Method::GET;
         *req.uri_mut() = hyper::Uri::from_static("http://localhost/");
 
@@ -230,10 +231,8 @@ mod test {
     #[test]
     fn test_handle_request_post_empty_body() {
         let mut req = Request::new(Empty::<Bytes>::new());
-        req.headers_mut().insert(
-            "x-custom-header",
-            HeaderValue::from_static("value"),
-        );
+        req.headers_mut()
+            .insert("x-custom-header", HeaderValue::from_static("value"));
         *req.method_mut() = Method::POST;
         *req.uri_mut() = hyper::Uri::from_static("http://localhost/");
 
@@ -294,14 +293,10 @@ mod test {
     #[test]
     fn test_handle_request_headers_echoed() {
         let mut req = Request::new(Empty::<Bytes>::new());
-        req.headers_mut().insert(
-            "x-echo-test",
-            HeaderValue::from_static("should-be-echoed"),
-        );
-        req.headers_mut().insert(
-            "another-header",
-            HeaderValue::from_static("another-value"),
-        );
+        req.headers_mut()
+            .insert("x-echo-test", HeaderValue::from_static("should-be-echoed"));
+        req.headers_mut()
+            .insert("another-header", HeaderValue::from_static("another-value"));
         *req.method_mut() = Method::GET;
         *req.uri_mut() = hyper::Uri::from_static("http://localhost/");
 
