@@ -1,5 +1,5 @@
 # Build image
-FROM rust:alpine as builder
+FROM rust:alpine AS builder
 
 RUN apk add --no-cache musl-dev
 
@@ -10,7 +10,7 @@ COPY . .
 RUN cargo build --release
 
 # Final image
-FROM alpine:latest
+FROM alpine:latest AS final
 
 ENV USER="app"
 

@@ -1,0 +1,28 @@
+# Echo server configuration file
+# This file is used to configure TLS certificates, port, and protocol
+# Only port, config file path, and protocol can be set via CLI flags
+
+# Port to listen on (optional, defaults to 8080)
+port = 8080
+
+# Protocol selection: "h2c", "h2", "h3", or "auto" (default)
+# - h2c: HTTP/2 cleartext (no TLS required)
+# - h2: HTTP/2 over TLS (requires TLS)
+# - h3: HTTP/3 over QUIC (requires TLS, needs --features http3)
+# - auto: Automatically select based on TLS configuration
+#   - With TLS: Start both H2 (TCP) and H3 (UDP) on same port
+#   - Without TLS: Start H2c (TCP) only
+protocol = "auto"
+
+# TLS/mTLS configuration
+[tls]
+server_cert = ""
+server_key = ""
+
+# CA certificate for client verification (required if require_client_certs is true)
+ca_cert = ""
+
+# Require and validate client certificates (mTLS). Default: false
+# - true: Client certificates are required and will be verified (mTLS)
+# - false: Client certificates are not required
+require_client_certs = true
