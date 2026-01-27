@@ -45,17 +45,6 @@ cargo build --release --features http3
 echo-server [-p|--port=8080] [--config=config.toml]
 ```
 
-**Behavior:**
-- GET: Returns request headers as response body
-- POST/PUT/PATCH: Returns request headers + blank line + request body
-
-**Example:**
-
-```console
-curl -X GET -H "x-test: value" localhost:8080
-# Response body: headers formatted as "header-name: value"
-```
-
 **Logging:**
 
 Enable debug logging with the `RUST_LOG` environment variable:
@@ -75,15 +64,6 @@ RUST_LOG=echo_server=debug echo-server
 - `--config <path>`: Path to TOML config file (default: config.toml)
 
 ### Configuration file
-
-Copy the example configuration to get started:
-
-```console
-cp example/config.toml config.toml
-echo-server
-```
-
-**Config file options:**
 
 ```toml
 # Port to listen on (optional, defaults to 8080)
@@ -112,91 +92,16 @@ require_client_certs = true
 
 See [`example/README.md`](example/README.md) for more configuration details and curl examples.
 
-## Running with Docker
-
-### Basic usage
-
-```console
-docker run --rm -p 8080:8080 swaagie/echo-server:latest
-```
-
-### With custom configuration
-
-```console
-docker run --rm -p 8080:8080 \
-  -v $(pwd)/config.toml:/server/config.toml:ro \
-  swaagie/echo-server:latest \
-  --config /server/config.toml
-```
-
-### With debug logging
-
-```console
-docker run --rm -p 8080:8080 \
-  -e RUST_LOG=debug \
-  swaagie/echo-server:latest
-```
-
-### With TLS certificates
-
-If your `config.toml` references certificate files, mount them into the container:
-
-```console
-docker run --rm -p 8443:8443 \
-  -v $(pwd)/config.toml:/server/config.toml:ro \
-  -v $(pwd)/certs:/server/certs:ro \
-  swaagie/echo-server:latest \
-  --port 8443 \
-  --config /server/config.toml
-```
-
 ## Running with Docker Compose
 
-The `example/` directory contains a ready-to-use Docker Compose setup.
-
-### Quick start
+The `example/` directory contains a ready-to-use Docker Compose setup:
 
 ```console
 cd example
 docker-compose up -d
 ```
 
-### Docker Compose configuration
-
-```yaml
-version: '3.8'
-
-services:
-  echo-server:
-    image: swaagie/echo-server:latest
-    ports:
-      - "8080:8080"
-    volumes:
-      - ./config.toml:/server/config.toml:ro
-    environment:
-      RUST_LOG: debug
-    command: ["--config", "/server/config.toml"]
-    restart: unless-stopped
-```
-
-### With mTLS enabled
-
-Update `docker-compose.yml` to mount your certificates:
-
-```yaml
-services:
-  echo-server-mtls:
-    image: swaagie/echo-server:latest
-    ports:
-      - "8443:8443"
-    volumes:
-      - ./config.toml:/server/config.toml:ro
-      - ./certs:/server/certs:ro
-    command:
-      - "--port=8443"
-      - "--config=/server/config.toml"
-    restart: unless-stopped
-```
+See [`example/docker-compose.yml`](example/docker-compose.yml) for the Compose configuration and [`example/config.toml`](example/config.toml) for server options. For mTLS or TLS, edit those files to mount your certificates and adjust the config.
 
 ## Testing with curl
 
