@@ -1,10 +1,10 @@
-use std::convert::Infallible;
-use hyper::header::{HeaderValue, CONTENT_LENGTH};
-use hyper::{Method, Request, Response, StatusCode};
+use http_body::Body as HttpBody;
 use http_body_util::BodyExt;
 use hyper::body::Bytes;
-use http_body::Body as HttpBody;
+use hyper::header::{HeaderValue, CONTENT_LENGTH};
+use hyper::{Method, Request, Response, StatusCode};
 use log::debug;
+use std::convert::Infallible;
 
 pub fn format_headers(headers: &hyper::HeaderMap) -> String {
     let mut header_lines = Vec::new();
@@ -18,9 +18,7 @@ pub fn format_headers(headers: &hyper::HeaderMap) -> String {
     header_lines.join("\n")
 }
 
-pub async fn handle_request<B>(
-    req: Request<B>,
-) -> Result<Response<String>, Infallible>
+pub async fn handle_request<B>(req: Request<B>) -> Result<Response<String>, Infallible>
 where
     B: HttpBody<Data = Bytes> + Send + 'static,
     B::Error: std::error::Error + Send + Sync + 'static,
@@ -54,12 +52,8 @@ where
             };
             (Some(combined_body), StatusCode::OK)
         }
-        (&Method::OPTIONS, "/") => {
-            (None, StatusCode::OK)
-        }
-        _ => {
-            (None, StatusCode::NOT_FOUND)
-        }
+        (&Method::OPTIONS, "/") => (None, StatusCode::OK),
+        _ => (None, StatusCode::NOT_FOUND),
     };
 
     // Set status code
@@ -69,10 +63,11 @@ where
     if let Some(body) = response_body {
         let content_length = HeaderValue::from_str(&body.len().to_string())
             .unwrap_or_else(|_| HeaderValue::from_static("0"));
-        response.headers_mut().insert(CONTENT_LENGTH, content_length);
+        response
+            .headers_mut()
+            .insert(CONTENT_LENGTH, content_length);
         *response.body_mut() = body;
     }
 
     Ok(response)
 }
-

@@ -1,14 +1,16 @@
-use std::sync::Arc;
-use rustls::{pki_types, ServerConfig};
-use rustls::server::WebPkiClientVerifier;
 use crate::config::TlsConfig;
+use rustls::server::WebPkiClientVerifier;
+use rustls::{pki_types, ServerConfig};
+use std::sync::Arc;
 
-#[cfg(feature = "http3")]
-use quinn::ServerConfig as QuinnServerConfig;
 #[cfg(feature = "http3")]
 use quinn::crypto::rustls::QuicServerConfig;
+#[cfg(feature = "http3")]
+use quinn::ServerConfig as QuinnServerConfig;
 
-pub fn load_certs(filename: &str) -> Result<Vec<pki_types::CertificateDer<'static>>, Box<dyn std::error::Error + Send + Sync>> {
+pub fn load_certs(
+    filename: &str,
+) -> Result<Vec<pki_types::CertificateDer<'static>>, Box<dyn std::error::Error + Send + Sync>> {
     let contents = std::fs::read(filename)?;
     let mut certs = Vec::new();
     for pem in rustls_pki_types::pem::SliceIter::<pki_types::CertificateDer>::new(&contents) {
@@ -20,21 +22,29 @@ pub fn load_certs(filename: &str) -> Result<Vec<pki_types::CertificateDer<'stati
     Ok(certs)
 }
 
-pub fn load_private_key(filename: &str) -> Result<pki_types::PrivateKeyDer<'static>, Box<dyn std::error::Error + Send + Sync>> {
+pub fn load_private_key(
+    filename: &str,
+) -> Result<pki_types::PrivateKeyDer<'static>, Box<dyn std::error::Error + Send + Sync>> {
     let contents = std::fs::read(filename)?;
 
     // Try PKCS8 first (most common)
-    if let Some(key) = rustls_pki_types::pem::SliceIter::<pki_types::PrivatePkcs8KeyDer>::new(&contents).next() {
+    if let Some(key) =
+        rustls_pki_types::pem::SliceIter::<pki_types::PrivatePkcs8KeyDer>::new(&contents).next()
+    {
         return Ok(pki_types::PrivateKeyDer::Pkcs8(key?));
     }
 
     // Try SEC1 (EC keys)
-    if let Some(key) = rustls_pki_types::pem::SliceIter::<pki_types::PrivateSec1KeyDer>::new(&contents).next() {
+    if let Some(key) =
+        rustls_pki_types::pem::SliceIter::<pki_types::PrivateSec1KeyDer>::new(&contents).next()
+    {
         return Ok(pki_types::PrivateKeyDer::Sec1(key?));
     }
 
     // Try PKCS1 (RSA keys)
-    if let Some(key) = rustls_pki_types::pem::SliceIter::<pki_types::PrivatePkcs1KeyDer>::new(&contents).next() {
+    if let Some(key) =
+        rustls_pki_types::pem::SliceIter::<pki_types::PrivatePkcs1KeyDer>::new(&contents).next()
+    {
         return Ok(pki_types::PrivateKeyDer::Pkcs1(key?));
     }
 
@@ -49,9 +59,10 @@ pub fn create_tls_config(
 
     // Configure client certificate verification
     let mut config = if tls_config.require_client_certs {
-        let ca_cert = tls_config.ca_cert.as_ref().ok_or(
-            "CA certificate is required when require_client_certs is true"
-        )?;
+        let ca_cert = tls_config
+            .ca_cert
+            .as_ref()
+            .ok_or("CA certificate is required when require_client_certs is true")?;
         let ca_certs = load_certs(ca_cert)?;
 
         let mut root_store = rustls::RootCertStore::empty();
@@ -87,9 +98,10 @@ pub fn create_quic_server_config(
     // Configure client certificate verification
     let rustls_config = {
         let mut config = if tls_config.require_client_certs {
-            let ca_cert = tls_config.ca_cert.as_ref().ok_or(
-                "CA certificate is required when require_client_certs is true"
-            )?;
+            let ca_cert = tls_config
+                .ca_cert
+                .as_ref()
+                .ok_or("CA certificate is required when require_client_certs is true")?;
             let ca_certs = load_certs(ca_cert)?;
 
             let mut root_store = rustls::RootCertStore::empty();
