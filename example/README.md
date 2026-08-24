@@ -38,18 +38,32 @@ brew install xh          # or: cargo install xh --locked
 HTTP/2 **and** HTTP/3 (builds from source, ~1 minute):
 
 ```console
-RUSTFLAGS='--cfg reqwest_unstable' cargo install xh --features http3 --locked
+RUSTFLAGS='--cfg reqwest_unstable' cargo install xh --features http3 --locked --force
 ```
 
 The `reqwest_unstable` flag is required: HTTP/3 support in the underlying
-`reqwest` crate is still gated as unstable. A binary built without the feature
-accepts the flag but refuses at runtime:
+`reqwest` crate is still gated as unstable. `--force` makes cargo rebuild even
+when some version of `xh` is already installed.
+
+A binary built without the feature accepts the flag but refuses at runtime:
 
 ```
 xh: error: This binary was built without support for HTTP/3. Enable the `http3` feature.
 ```
 
-Check what you have with `xh --version`.
+**If you still see that error after installing**, you are running a different
+`xh` than the one you just built — usually a packaged copy that your shell
+cached or that sits earlier in `PATH`:
+
+```console
+hash -r          # zsh/bash: forget the cached path (zsh also accepts `rehash`)
+which -a xh      # every xh on PATH, in resolution order — the first one wins
+```
+
+`cargo install` puts the binary in `~/.cargo/bin`. If a packaged `xh` (for
+example `/opt/homebrew/bin/xh`) resolves first, either put `~/.cargo/bin`
+earlier in `PATH`, remove the packaged copy (`brew uninstall xh`), or call the
+built one by its full path.
 
 ### Talk to it
 
