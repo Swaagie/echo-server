@@ -84,6 +84,18 @@ xh --verify=no --http-version 2 https://localhost:8443/
 See [`example/README.md`](example/README.md) for HTTP/3 clients, mTLS, and
 running the image directly.
 
+## Releasing
+
+Publishing to crates.io runs on a version tag, after the tests pass:
+
+```console
+git tag v4.0.1
+git push origin v4.0.1
+```
+
+The tag must match `version` in `Cargo.toml`, or the workflow stops before
+publishing.
+
 ## License
 
 [MIT](https://choosealicense.com/licenses/mit/)

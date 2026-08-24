@@ -3,6 +3,8 @@ on:
   push:
     branches:
       - main
+    tags:
+      - "v*"
   pull_request:
     branches:
       - main
@@ -51,9 +53,20 @@ jobs:
     - name: Release build
       run: |
         cargo build --release --all-features
+    - name: Check the tag matches the package version
+      if: startsWith(github.ref, 'refs/tags/v')
+      shell: bash
+      run: |
+        tag="${GITHUB_REF_NAME#v}"
+        package=$(grep -m1 '^version = ' Cargo.toml | cut -d'"' -f2)
+        if [ "$tag" != "$package" ]; then
+          echo "tag v$tag does not match package version $package"
+          exit 1
+        fi
     - name: Publish
-      if: ${{ contains(github.event.head_commit.message, 'release') }}
-      run: cargo publish
+      if: startsWith(github.ref, 'refs/tags/v')
+      shell: bash
+      run: |
+        cargo publish
       env:
-        GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
         CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
