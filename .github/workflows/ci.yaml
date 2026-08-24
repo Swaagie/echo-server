@@ -8,6 +8,20 @@ on:
       - main
 
 jobs:
+  # Runs separately from `test` so an advisory published against a dependency
+  # does not mask a real test failure, and vice versa.
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    # Installs a prebuilt cargo-audit rather than compiling it on every run.
+    - uses: taiki-e/install-action@cargo-audit
+    # Plain `cargo audit` fails on vulnerabilities only. Warnings (unmaintained
+    # or yanked transitive crates) are reported without blocking unrelated work;
+    # add --deny warnings to make those failures too.
+    - name: Audit dependencies for security advisories
+      run: cargo audit
+
   test:
     runs-on: ubuntu-latest
     steps:
