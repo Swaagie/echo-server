@@ -1,6 +1,3 @@
-//! End-to-end tests: every case drives a real `echo-server` process over a real
-//! socket, exercising the protocol stack the unit tests bypass.
-
 mod common;
 
 use std::time::Duration;
@@ -28,10 +25,6 @@ fn request<B>(method: Method, port: u16, path: &str, body: B) -> Request<B> {
         .body(body)
         .expect("build request")
 }
-
-// ---------------------------------------------------------------------------
-// h2c echo semantics
-// ---------------------------------------------------------------------------
 
 fn h2c_server() -> Server {
     let port = free_port();
@@ -119,8 +112,6 @@ async fn h2c_options_root_returns_empty_body() {
     server.assert_no_panic();
 }
 
-/// Regression for the echoed `content-length` desync: a 404 answering a request
-/// that carried a body must not advertise that request's length.
 #[tokio::test]
 async fn h2c_not_found_does_not_advertise_request_content_length() {
     let server = h2c_server();
@@ -137,7 +128,6 @@ async fn h2c_not_found_does_not_advertise_request_content_length() {
     server.assert_no_panic();
 }
 
-/// Regression for the same desync on the OPTIONS path.
 #[tokio::test]
 async fn h2c_options_does_not_advertise_request_content_length() {
     let server = h2c_server();
@@ -153,7 +143,6 @@ async fn h2c_options_does_not_advertise_request_content_length() {
     server.assert_no_panic();
 }
 
-/// RFC 9110: a server that supports GET on a resource must support HEAD.
 #[tokio::test]
 async fn h2c_head_root_mirrors_get() {
     let server = h2c_server();
@@ -182,7 +171,6 @@ async fn h2c_head_root_mirrors_get() {
     server.assert_no_panic();
 }
 
-/// Connection-level headers belong to a single hop and must not be reflected.
 #[tokio::test]
 async fn h2c_does_not_echo_hop_by_hop_headers() {
     let server = h2c_server();
@@ -196,13 +184,6 @@ async fn h2c_does_not_echo_hop_by_hop_headers() {
     server.assert_no_panic();
 }
 
-// ---------------------------------------------------------------------------
-// Hostile / truncated input
-// ---------------------------------------------------------------------------
-
-/// A client that declares a `content-length` it never sends and then drops the
-/// connection must not panic the server: the body read is a fallible path that
-/// has to surface as an error, not `unwrap()`.
 #[tokio::test]
 async fn h2c_truncated_request_body_does_not_panic_the_server() {
     let port = free_port();
@@ -221,7 +202,6 @@ async fn h2c_truncated_request_body_does_not_panic_the_server() {
         let _ = conn.await;
     });
 
-    // Promise 1000 bytes, send 7, then vanish.
     let (tx, rx) = tokio::sync::mpsc::channel::<Result<Frame<Bytes>, std::io::Error>>(4);
     tx.send(Ok(Frame::data(Bytes::from_static(b"partial"))))
         .await
@@ -241,19 +221,13 @@ async fn h2c_truncated_request_body_does_not_panic_the_server() {
     drop(tx);
     let _ = pending.await;
 
-    // Give the server a moment to log anything it is going to log.
     tokio::time::sleep(Duration::from_millis(400)).await;
     server.assert_no_panic();
 
-    // And it must still serve a fresh connection.
     let resp = h2c_request(server.addr(), request(Method::GET, port, "/", empty())).await;
     assert_eq!(resp.status(), StatusCode::OK);
     server.assert_no_panic();
 }
-
-// ---------------------------------------------------------------------------
-// TLS
-// ---------------------------------------------------------------------------
 
 fn tls_server(certs: &TestCerts, protocol: &str, mtls: bool) -> (Server, TestConfig, u16) {
     let port = free_port();
@@ -345,10 +319,6 @@ async fn mtls_rejects_client_cert_from_untrusted_ca() {
     server.assert_no_panic();
 }
 
-// ---------------------------------------------------------------------------
-// HTTP/3
-// ---------------------------------------------------------------------------
-
 #[cfg(feature = "http3")]
 mod http3 {
     use super::*;
@@ -357,8 +327,6 @@ mod http3 {
     fn h3_server(certs: &TestCerts, mtls: bool) -> (Server, TestConfig, u16) {
         let port = free_port();
         let config = TestConfig::write(&tls_config_toml(certs, port, "h3", mtls));
-        // h3 binds UDP only, so there is no TCP listener to poll for readiness;
-        // wait for the server to announce the listener instead.
         let mut server = Server::spawn(&["--config", &config.arg()], port);
         server.wait_for_log("Listening for HTTP/3", Duration::from_secs(10));
         (server, config, port)
@@ -434,10 +402,6 @@ mod http3 {
     }
 }
 
-// ---------------------------------------------------------------------------
-// auto mode
-// ---------------------------------------------------------------------------
-
 #[tokio::test]
 async fn auto_without_tls_serves_h2c() {
     let port = free_port();
@@ -467,8 +431,6 @@ async fn auto_with_tls_serves_h2() {
     server.assert_no_panic();
 }
 
-/// Without `Alt-Svc` no client will ever discover the HTTP/3 listener that
-/// `auto` mode starts alongside HTTP/2.
 #[cfg(feature = "http3")]
 #[tokio::test]
 async fn auto_with_tls_advertises_h3_via_alt_svc() {
@@ -494,15 +456,12 @@ async fn auto_with_tls_advertises_h3_via_alt_svc() {
     server.assert_no_panic();
 }
 
-/// If one of the two `auto` listeners cannot bind, the process must fail loudly
-/// rather than silently cancelling the other and exiting successfully.
 #[cfg(feature = "http3")]
 #[tokio::test]
 async fn auto_exits_nonzero_when_the_udp_listener_cannot_bind() {
     let certs = TestCerts::generate();
     let port = free_port();
 
-    // Hold the UDP port so the QUIC endpoint cannot bind it.
     let _blocker = std::net::UdpSocket::bind(("127.0.0.1", port)).expect("occupy udp port");
 
     let config = TestConfig::write(&tls_config_toml(&certs, port, "auto", false));
@@ -527,10 +486,6 @@ async fn auto_exits_nonzero_when_the_udp_listener_cannot_bind() {
         "server exited without explaining why; stderr was:\n{stderr}"
     );
 }
-
-// ---------------------------------------------------------------------------
-// CLI / configuration failures
-// ---------------------------------------------------------------------------
 
 #[test]
 fn missing_certificate_exits_nonzero_with_a_message_on_stderr() {
@@ -583,15 +538,6 @@ fn h2c_with_tls_exits_nonzero_with_a_message_on_stderr() {
     );
 }
 
-// ---------------------------------------------------------------------------
-// Shutdown
-// ---------------------------------------------------------------------------
-
-/// A request that is already in flight when the shutdown signal arrives must be
-/// answered, not dropped.
-///
-/// The client paces the request body itself, so the server is provably still
-/// mid-request when SIGINT lands rather than relying on a timing race.
 #[cfg(unix)]
 #[tokio::test]
 async fn sigint_drains_a_request_that_is_still_in_flight() {
@@ -619,18 +565,15 @@ async fn sigint_drains_a_request_that_is_still_in_flight() {
         .body(body)
         .expect("build streaming request");
 
-    // First half goes out; the server is now parked reading the rest.
     tx.send(Ok(Frame::data(Bytes::from_static(b"first-half "))))
         .await
         .expect("send first chunk");
     let pending = tokio::spawn(async move { sender.send_request(req).await });
     tokio::time::sleep(Duration::from_millis(200)).await;
 
-    // Shut down while that request is unfinished.
     server.send_sigint();
     tokio::time::sleep(Duration::from_millis(200)).await;
 
-    // Now let the request complete.
     tx.send(Ok(Frame::data(Bytes::from_static(b"second-half"))))
         .await
         .expect("send second chunk");
@@ -660,8 +603,6 @@ async fn sigint_drains_a_request_that_is_still_in_flight() {
     server.assert_no_panic();
 }
 
-/// An empty certificate path is a configuration mistake, not a path that
-/// happens to resolve to the config file's own directory.
 #[test]
 fn empty_certificate_path_is_rejected_with_a_clear_message() {
     let config = TestConfig::write(
@@ -676,8 +617,6 @@ fn empty_certificate_path_is_rejected_with_a_clear_message() {
     );
 }
 
-/// A file that exists but is not a certificate must fail at startup with a
-/// message that names the problem.
 #[test]
 fn unparseable_certificate_is_rejected_at_startup() {
     let placeholder = TestConfig::write("placeholder");

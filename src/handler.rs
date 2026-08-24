@@ -6,11 +6,6 @@ use hyper::{Method, Request, Response, StatusCode};
 use log::debug;
 use std::convert::Infallible;
 
-/// Headers that describe a single hop rather than the message itself.
-///
-/// Echoing these back would describe *our* connection using the client's
-/// values, so they are dropped from the response headers. They still appear in
-/// the echoed body, which is a faithful record of the request.
 const HOP_BY_HOP_HEADERS: [HeaderName; 9] = [
     hyper::header::CONNECTION,
     hyper::header::TE,
@@ -43,7 +38,6 @@ where
     handle_request_with_alt_svc(req, None).await
 }
 
-/// Handle a request, optionally advertising an HTTP/3 endpoint via `Alt-Svc`.
 pub async fn handle_request_with_alt_svc<B>(
     req: Request<B>,
     alt_svc: Option<HeaderValue>,
@@ -52,21 +46,14 @@ where
     B: HttpBody<Data = Bytes> + Send + 'static,
     B::Error: std::error::Error + Send + Sync + 'static,
 {
-    // Extract headers before consuming the request
     let headers = req.headers().clone();
     let method = req.method().clone();
     let path = req.uri().path().to_string();
 
     debug!("Received {} request for {}", method, path);
 
-    // Handle each HTTP verb - compute response body and status.
-    //
-    // `body_for_client` is what we actually write; `declared_len` is what the
-    // `Content-Length` header must say. They differ only for HEAD, which
-    // advertises the length GET would have produced while sending no body.
     let (body_for_client, declared_len, status) = match (&method, path.as_str()) {
         (&Method::GET, "/") | (&Method::HEAD, "/") => {
-            // Return all request headers as the response body
             let echoed = format_headers(&headers);
             let len = echoed.len();
             if method == Method::HEAD {
@@ -76,8 +63,6 @@ where
             }
         }
         (&Method::POST, "/") | (&Method::PUT, "/") | (&Method::PATCH, "/") => {
-            // Read the request body. A client that abandons the request mid-body
-            // is a normal occurrence, not a reason to tear down the task.
             let body_bytes = match req.into_body().collect().await {
                 Ok(collected) => collected.to_bytes(),
                 Err(e) => {
@@ -92,7 +77,6 @@ where
             };
             let body_str = String::from_utf8_lossy(&body_bytes);
 
-            // Format headers and combine with body
             let headers_str = format_headers(&headers);
             let combined_body = if body_str.is_empty() {
                 headers_str
@@ -109,9 +93,6 @@ where
     let mut response = Response::new(body_for_client);
     *response.status_mut() = status;
 
-    // Echo request headers in response headers, minus the per-hop ones and the
-    // request's own Content-Length, which describes the request body and not
-    // the response we are about to send.
     for (name, value) in headers.iter() {
         if name == CONTENT_LENGTH || HOP_BY_HOP_HEADERS.contains(name) {
             continue;
@@ -119,7 +100,6 @@ where
         response.headers_mut().insert(name.clone(), value.clone());
     }
 
-    // Always describe the body we actually produced.
     let content_length = HeaderValue::from_str(&declared_len.to_string())
         .unwrap_or_else(|_| HeaderValue::from_static("0"));
     response

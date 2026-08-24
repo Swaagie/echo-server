@@ -8,8 +8,6 @@ on:
       - main
 
 jobs:
-  # Runs separately from `test` so an advisory published against a dependency
-  # does not mask a real test failure, and vice versa.
   audit:
     runs-on: ubuntu-latest
     steps:
@@ -18,9 +16,6 @@ jobs:
       shell: bash
       run: |
         cargo install cargo-audit --locked
-    # Plain `cargo audit` fails on vulnerabilities only. Warnings (unmaintained
-    # or yanked transitive crates) are reported without blocking unrelated work;
-    # add --deny warnings to make those failures too.
     - name: Audit dependencies for security advisories
       shell: bash
       run: |
@@ -38,15 +33,10 @@ jobs:
       shell: bash
       run: |
         cargo fmt --all -- --check
-    # --all-targets so tests and the e2e suite are linted too, and warnings are
-    # failures rather than noise scrolled past in the log.
     - name: Run clippy check
       shell: bash
       run: |
         cargo clippy --all-targets --all-features -- -D warnings
-    # HTTP/3 is behind a feature flag, and the two builds pull in different
-    # rustls wiring, so both are exercised. The e2e suite starts real servers
-    # and speaks h2c, h2, h3 and mTLS over real sockets.
     - name: Test (default features)
       shell: bash
       run: |

@@ -25,9 +25,6 @@ async fn main() {
 }
 
 async fn run() -> Result<(), BoxError> {
-    // Pin the rustls provider explicitly. Without this, rustls picks one from
-    // the enabled crate features and panics if it cannot decide; here that
-    // surfaces as an ordinary startup error instead.
     if rustls::crypto::aws_lc_rs::default_provider()
         .install_default()
         .is_err()
@@ -47,8 +44,6 @@ async fn run() -> Result<(), BoxError> {
     }
 }
 
-/// Wait for Ctrl-C. A failure to register the handler is reported rather than
-/// silently ignored, and leaves the server running.
 async fn shutdown_signal() {
     if let Err(e) = tokio::signal::ctrl_c().await {
         error!("Failed to listen for shutdown signal: {}", e);
@@ -96,9 +91,6 @@ async fn serve_h3(_config: &AppConfig, _address: SocketAddr) -> Result<(), BoxEr
     Err("HTTP/3 support is not compiled in. Build with --features http3".into())
 }
 
-/// Auto mode: with TLS serve h2 (TCP) and, when compiled in, h3 (UDP) on the
-/// same port. Both listeners must come up: if either fails the process exits
-/// non-zero rather than continuing to serve on a single transport.
 #[cfg(feature = "http3")]
 async fn serve_auto(config: &AppConfig, address: SocketAddr) -> Result<(), BoxError> {
     let Some(tls) = config.tls.clone() else {
@@ -108,8 +100,6 @@ async fn serve_auto(config: &AppConfig, address: SocketAddr) -> Result<(), BoxEr
         info!("mTLS enabled: client certificates required");
     }
 
-    // Tell HTTP/2 clients that the same authority is reachable over HTTP/3;
-    // without this nobody discovers the QUIC listener.
     let alt_svc = format!("h3=\":{}\"; ma=3600", address.port());
 
     let h2 = async {
@@ -123,8 +113,6 @@ async fn serve_auto(config: &AppConfig, address: SocketAddr) -> Result<(), BoxEr
             .map_err(|e| BoxError::from(format!("HTTP/3 server error: {e}")))
     };
 
-    // try_join drops the surviving listener as soon as the other fails, so a
-    // half-broken server exits instead of quietly serving one transport.
     tokio::try_join!(h2, h3).map(|((), ())| ())
 }
 
@@ -149,9 +137,6 @@ mod test {
 
     fn create_temp_file(contents: &str) -> PathBuf {
         use std::sync::atomic::{AtomicU32, Ordering};
-        // A timestamp alone is not unique: tests run in parallel and can land on
-        // the same nanosecond, so two of them share a path and delete each
-        // other's fixture on cleanup.
         static COUNTER: AtomicU32 = AtomicU32::new(0);
 
         let temp_dir = std::env::temp_dir();
@@ -205,7 +190,6 @@ mod test {
         assert!(resp.headers().contains_key("content-type"));
         assert!(resp.headers().contains_key("x-test-header"));
 
-        // Check that response body contains headers
         let body_str = resp.into_body();
         assert!(body_str.contains("content-type: text/plain"));
         assert!(body_str.contains("x-test-header: test-value"));
@@ -277,7 +261,6 @@ mod test {
         let resp = tokio_test::block_on(handle_request(req)).unwrap();
 
         assert_eq!(resp.status(), hyper::StatusCode::OK);
-        // OPTIONS should not have a body
         let body_str = resp.into_body();
         assert_eq!(body_str.len(), 0);
     }
@@ -305,7 +288,6 @@ mod test {
 
         let resp = tokio_test::block_on(handle_request(req)).unwrap();
 
-        // Headers should be echoed in response headers
         assert_eq!(
             resp.headers().get("x-echo-test").unwrap(),
             "should-be-echoed"
@@ -345,7 +327,6 @@ ca_cert = "/path/to/ca"
         assert_eq!(tls.server_key, "/path/to/key");
         assert_eq!(tls.ca_cert, Some("/path/to/ca".to_string()));
 
-        // Clean up
         let _ = fs::remove_file(&temp_file);
     }
 
@@ -357,7 +338,6 @@ ca_cert = "/path/to/ca"
         let result = config::load_config_file(file_path);
         assert!(result.is_err());
 
-        // Clean up
         let _ = fs::remove_file(&temp_file);
     }
 
@@ -373,9 +353,8 @@ ca_cert = "/path/to/ca"
         };
 
         let config = config::merge_config(cli).unwrap();
-        assert_eq!(config.port, 3000); // CLI takes precedence
+        assert_eq!(config.port, 3000);
 
-        // Clean up
         let _ = fs::remove_file(&temp_file);
     }
 
@@ -393,7 +372,6 @@ ca_cert = "/path/to/ca"
         let config = config::merge_config(cli).unwrap();
         assert_eq!(config.port, 9000);
 
-        // Clean up
         let _ = fs::remove_file(&temp_file);
     }
 
@@ -406,13 +384,11 @@ ca_cert = "/path/to/ca"
         };
 
         let config = config::merge_config(cli).unwrap();
-        assert_eq!(config.port, 8080); // Default port
+        assert_eq!(config.port, 8080);
     }
 
     #[test]
     fn test_merge_config_tls_from_file() {
-        // Create temporary certificate files for validation
-        // Fixed names would collide with any concurrent run of this test binary.
         let temp_dir = std::env::temp_dir().join(format!(
             "echo-server-test-certs-{}-{}",
             std::process::id(),
@@ -457,7 +433,6 @@ ca_cert = "{}"
         assert_eq!(tls.server_key, server_key.to_str().unwrap());
         assert_eq!(tls.ca_cert, Some(ca_cert.to_str().unwrap().to_string()));
 
-        // Clean up
         let _ = fs::remove_file(&temp_file);
         let _ = fs::remove_dir_all(&temp_dir);
     }
