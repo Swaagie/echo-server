@@ -294,6 +294,39 @@ impl Server {
         );
     }
 
+    /// Block until the server logs `needle`, so tests never race a listener
+    /// that has not finished binding.
+    ///
+    /// This is how UDP-only modes are awaited: unlike TCP there is no socket to
+    /// poll, and a fixed sleep loses the race on a loaded machine.
+    pub fn wait_for_log(&mut self, needle: &str, timeout: Duration) {
+        let deadline = Instant::now() + timeout;
+        loop {
+            if self.stderr().contains(needle) {
+                return;
+            }
+            let exited = self
+                .child
+                .as_mut()
+                .expect("child already reaped")
+                .try_wait()
+                .expect("try_wait");
+            if let Some(status) = exited {
+                panic!(
+                    "server exited with {status} before logging {needle:?}; stderr was:\n{}",
+                    self.stderr()
+                );
+            }
+            if Instant::now() >= deadline {
+                panic!(
+                    "server never logged {needle:?} within {timeout:?}; stderr was:\n{}",
+                    self.stderr()
+                );
+            }
+            std::thread::sleep(Duration::from_millis(25));
+        }
+    }
+
     /// Wait up to `timeout` for the process to exit on its own.
     pub fn wait_for_exit(&mut self, timeout: Duration) -> Option<std::process::ExitStatus> {
         let deadline = Instant::now() + timeout;
