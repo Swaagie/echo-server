@@ -11,16 +11,8 @@ use std::time::Duration;
 use tokio::net::TcpListener;
 use tokio_rustls::TlsAcceptor;
 
-/// How long to let in-flight requests finish after a shutdown signal before
-/// dropping what is left.
-///
-/// Echo responses complete in microseconds, so this only bounds pathological
-/// cases. It is deliberately short: after GOAWAY, a client holding an idle
-/// connection open keeps the drain waiting, and an echo server should exit
-/// promptly on Ctrl-C rather than linger for an idle peer.
 const DRAIN_TIMEOUT: Duration = Duration::from_secs(2);
 
-/// Wait for open connections to finish, but never hang forever on one.
 async fn drain(graceful: GracefulShutdown, server: &str) {
     tokio::select! {
         () = graceful.shutdown() => {
@@ -53,8 +45,6 @@ pub async fn serve_h2c(
                         let http = http.clone();
                         let service = service_fn(handle_request);
                         let io = TokioIo::new(stream);
-                        // `watch` keeps the connection tracked so shutdown can
-                        // wait for it instead of dropping it mid-request.
                         let conn = graceful.watch(http.serve_connection(io, service));
 
                         tokio::spawn(async move {
@@ -87,8 +77,6 @@ pub async fn serve_h2(
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let tls_server_config = create_tls_config(tls_config)?;
 
-    // Parsed once at startup so a malformed value fails fast rather than per
-    // request.
     let alt_svc = match alt_svc {
         Some(value) => Some(
             HeaderValue::from_str(&value)
@@ -112,8 +100,6 @@ pub async fn serve_h2(
                         let tls_acceptor = tls_acceptor.clone();
                         let http = http.clone();
                         let alt_svc = alt_svc.clone();
-                        // The handshake has not happened yet, so the connection
-                        // is registered for draining only once it succeeds.
                         let watcher = graceful.watcher();
 
                         tokio::spawn(async move {

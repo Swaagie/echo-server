@@ -21,8 +21,6 @@ jobs:
       with:
         push: true
         tags: swaagie/echo-server:latest
-        # HTTP/3 is behind a cargo feature; without this the published image
-        # cannot serve h3 even when the config asks for it.
         build-args: |
           FEATURES=http3
     - name: Image digest

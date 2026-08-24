@@ -1,9 +1,3 @@
-//! Shared harness for end-to-end tests.
-//!
-//! Every test in this suite talks to a real `echo-server` process over a real
-//! socket. Nothing here calls into the library directly: the point is to catch
-//! defects that only appear once a listener is bound and a handshake completes.
-
 #![allow(dead_code)]
 
 use std::io::Read;
@@ -19,12 +13,6 @@ use hyper::body::Bytes;
 use hyper::{Request, Response};
 use hyper_util::rt::{TokioExecutor, TokioIo};
 
-/// Install `aws-lc-rs` as the process-level rustls provider for the *test*
-/// process, matching the provider the server is expected to pin (chosen for its
-/// post-quantum key exchange support).
-///
-/// This only makes the client side deterministic; the server must install its
-/// own, so a handshake failure here points at the server.
 pub fn install_crypto_provider() {
     static ONCE: Once = Once::new();
     ONCE.call_once(|| {
@@ -32,10 +20,6 @@ pub fn install_crypto_provider() {
     });
 }
 
-/// Grab a port the OS says is free.
-///
-/// There is an inherent race between releasing the probe socket and the server
-/// binding it, so each test gets a fresh port and retries are cheap.
 pub fn free_port() -> u16 {
     let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind probe socket");
     let port = listener.local_addr().expect("probe local_addr").port();
@@ -43,12 +27,6 @@ pub fn free_port() -> u16 {
     port
 }
 
-// ---------------------------------------------------------------------------
-// Certificate fixtures
-// ---------------------------------------------------------------------------
-
-/// A throwaway PKI: one CA, a server leaf, a client leaf signed by that CA, and
-/// a second CA with its own client leaf to exercise rejection paths.
 pub struct TestCerts {
     dir: PathBuf,
     pub ca_cert: PathBuf,
@@ -157,7 +135,6 @@ fn scratch_dir(kind: &str) -> PathBuf {
     std::env::temp_dir().join(format!("echo-server-e2e-{kind}-{nanos}-{n}"))
 }
 
-/// Write a config file into a self-cleaning temp directory.
 pub struct TestConfig {
     dir: PathBuf,
     pub path: PathBuf,
@@ -183,7 +160,6 @@ impl Drop for TestConfig {
     }
 }
 
-/// Render a TLS config file pointing at the generated fixtures.
 pub fn tls_config_toml(certs: &TestCerts, port: u16, protocol: &str, mtls: bool) -> String {
     format!(
         "port = {port}\nprotocol = \"{protocol}\"\n\n[tls]\nserver_cert = \"{}\"\nserver_key = \"{}\"\nca_cert = \"{}\"\nrequire_client_certs = {mtls}\n",
@@ -197,11 +173,6 @@ fn display(path: &Path) -> String {
     path.to_string_lossy().to_string()
 }
 
-// ---------------------------------------------------------------------------
-// Server process
-// ---------------------------------------------------------------------------
-
-/// A running `echo-server` child process, killed when the handle is dropped.
 pub struct Server {
     child: Option<Child>,
     pub port: u16,
@@ -209,14 +180,12 @@ pub struct Server {
 }
 
 impl Server {
-    /// Start the server and wait until its TCP listener accepts connections.
     pub fn start_tcp(args: &[&str], port: u16) -> Server {
         let mut server = Server::spawn(args, port);
         server.wait_for_tcp();
         server
     }
 
-    /// Start the server without waiting for a TCP listener (UDP-only modes).
     pub fn spawn(args: &[&str], port: u16) -> Server {
         let mut child = Command::new(env!("CARGO_BIN_EXE_echo-server"))
             .args(args)
@@ -253,12 +222,10 @@ impl Server {
         SocketAddr::from(([127, 0, 0, 1], self.port))
     }
 
-    /// Everything the server has written to stderr so far.
     pub fn stderr(&self) -> String {
         self.stderr.lock().expect("stderr lock").clone()
     }
 
-    /// Fail the test if the server logged a panic.
     pub fn assert_no_panic(&self) {
         let log = self.stderr();
         assert!(
@@ -294,11 +261,6 @@ impl Server {
         );
     }
 
-    /// Block until the server logs `needle`, so tests never race a listener
-    /// that has not finished binding.
-    ///
-    /// This is how UDP-only modes are awaited: unlike TCP there is no socket to
-    /// poll, and a fixed sleep loses the race on a loaded machine.
     pub fn wait_for_log(&mut self, needle: &str, timeout: Duration) {
         let deadline = Instant::now() + timeout;
         loop {
@@ -327,7 +289,6 @@ impl Server {
         }
     }
 
-    /// Wait up to `timeout` for the process to exit on its own.
     pub fn wait_for_exit(&mut self, timeout: Duration) -> Option<std::process::ExitStatus> {
         let deadline = Instant::now() + timeout;
         loop {
@@ -347,8 +308,6 @@ impl Server {
         }
     }
 
-    /// Send SIGINT without waiting. Safe to call from async context: it does
-    /// not block the runtime thread.
     #[cfg(unix)]
     pub fn send_sigint(&mut self) {
         let pid = self.child.as_mut().expect("child already reaped").id();
@@ -370,7 +329,6 @@ impl Drop for Server {
     }
 }
 
-/// Run the server to completion and capture its exit status and stderr.
 pub fn run_to_completion(args: &[&str]) -> (std::process::ExitStatus, String) {
     let output = Command::new(env!("CARGO_BIN_EXE_echo-server"))
         .args(args)
@@ -383,11 +341,6 @@ pub fn run_to_completion(args: &[&str]) -> (std::process::ExitStatus, String) {
     )
 }
 
-// ---------------------------------------------------------------------------
-// Clients
-// ---------------------------------------------------------------------------
-
-/// A response with its body already collected.
 pub struct Captured {
     pub parts: hyper::http::response::Parts,
     pub body: String,
@@ -406,7 +359,6 @@ impl Captured {
             .map(str::to_string)
     }
 
-    /// A response must never advertise a length it did not send.
     pub fn assert_content_length_matches_body(&self) {
         if let Some(declared) = self.header("content-length") {
             let declared: usize = declared.parse().expect("numeric content-length");
@@ -420,7 +372,6 @@ impl Captured {
         }
     }
 
-    /// Connection-level headers are per-hop and must not be echoed back.
     pub fn assert_no_hop_by_hop_headers(&self) {
         for name in [
             "connection",
@@ -453,7 +404,6 @@ where
     }
 }
 
-/// Send one request over h2c (prior knowledge, no TLS).
 pub async fn h2c_request<B>(addr: SocketAddr, req: Request<B>) -> Captured
 where
     B: hyper::body::Body<Data = Bytes> + Send + Unpin + 'static,
@@ -473,7 +423,6 @@ where
     capture(resp).await
 }
 
-/// Send one request over h2c, returning the transport error if there is one.
 pub async fn h2c_try_request<B>(addr: SocketAddr, req: Request<B>) -> Result<Captured, hyper::Error>
 where
     B: hyper::body::Body<Data = Bytes> + Send + Unpin + 'static,
@@ -491,7 +440,6 @@ where
     Ok(capture(resp).await)
 }
 
-/// Client identity for a TLS connection.
 pub enum ClientAuth<'a> {
     None,
     Cert { cert: &'a Path, key: &'a Path },
@@ -532,7 +480,6 @@ fn client_tls_config(ca_cert: &Path, auth: ClientAuth<'_>, alpn: &[&[u8]]) -> ru
     config
 }
 
-/// Complete a TLS handshake and send one h2 request.
 pub async fn h2_tls_request<B>(
     addr: SocketAddr,
     ca_cert: &Path,
@@ -558,7 +505,6 @@ where
     Ok(capture(resp).await)
 }
 
-/// Complete a QUIC handshake and send one h3 request.
 #[cfg(feature = "http3")]
 pub async fn h3_request(
     addr: SocketAddr,

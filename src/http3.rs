@@ -60,8 +60,6 @@ pub async fn serve_h3(
 
                         tokio::spawn(async move {
                             let h3_conn = Connection::new(quinn_conn);
-                            // Errors are logged here: the JoinHandle is dropped,
-                            // so `?` would discard them silently.
                             match H3Connection::new(h3_conn).await {
                                 Ok(mut server) => {
                                     if let Err(e) = handle_h3_connection(&mut server).await {
@@ -117,7 +115,6 @@ async fn handle_h3_request(
     req: Request<()>,
     mut stream: h3::server::RequestStream<h3_quinn::BidiStream<Bytes>, Bytes>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    // Convert h3::Request to hyper::Request for our handler
     let (parts, _) = req.into_parts();
     let mut hyper_req = Request::new(Full::new(Bytes::new()));
     *hyper_req.method_mut() = parts.method;
@@ -125,7 +122,6 @@ async fn handle_h3_request(
     *hyper_req.headers_mut() = parts.headers;
     *hyper_req.version_mut() = parts.version;
 
-    // Read request body if present
     let mut body_bytes = Vec::new();
     while let Some(chunk) = stream.recv_data().await? {
         body_bytes.extend_from_slice(chunk.chunk());
@@ -135,17 +131,14 @@ async fn handle_h3_request(
         *hyper_req.body_mut() = Full::new(Bytes::from(body_bytes));
     }
 
-    // Handle the request using our shared handler
     let hyper_resp = handle_request(hyper_req).await?;
 
-    // Convert hyper::Response to h3::Response
     let (parts, body) = hyper_resp.into_parts();
     let body_bytes = Bytes::from(body.into_bytes());
 
     let mut resp = hyper::Response::builder().status(parts.status).body(())?;
     *resp.headers_mut() = parts.headers;
 
-    // Send response
     stream.send_response(resp).await?;
 
     if !body_bytes.is_empty() {
