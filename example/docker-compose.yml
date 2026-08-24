@@ -1,30 +1,46 @@
-version: '3.8'
-
 services:
+  # Generates a self-signed certificate for localhost into a shared volume.
+  # Runs once; the echo-server waits for it to finish.
+  certs:
+    image: alpine:3.20
+    volumes:
+      - certs:/certs
+    command:
+      - sh
+      - -c
+      - |
+        set -e
+        apk add --no-cache openssl >/dev/null
+        if [ ! -f /certs/server.crt ]; then
+          openssl req -x509 -newkey rsa:2048 -nodes -days 365 \
+            -keyout /certs/server.key -out /certs/server.crt \
+            -subj "/CN=localhost" \
+            -addext "subjectAltName=DNS:localhost,DNS:echo-server,IP:127.0.0.1"
+        fi
+        # The server runs as a non-root user, and this is a throwaway
+        # development key, so make it world-readable.
+        chmod 644 /certs/server.key /certs/server.crt
+
   echo-server:
     build:
       context: ..
       dockerfile: Dockerfile
+      args:
+        # Required for the HTTP/3 (QUIC) listener.
+        FEATURES: http3
+    depends_on:
+      certs:
+        condition: service_completed_successfully
     ports:
-      - "8080:8080"
+      - "8443:8443/tcp"   # HTTP/2 over TLS
+      - "8443:8443/udp"   # HTTP/3 over QUIC
     volumes:
+      - certs:/certs:ro
       - ./config.toml:/server/config.toml:ro
     environment:
-      RUST_LOG: debug
+      RUST_LOG: info
     command: ["--config", "/server/config.toml"]
     restart: unless-stopped
 
-  # Example with mTLS enabled
-  # Uncomment and configure paths to your certificates
-  # echo-server-mtls:
-  #   image: swaagie/echo-server:latest
-  #   ports:
-  #     - "8443:8443"
-  #   volumes:
-  #     - ./config.toml:/server/config.toml:ro
-  #     - /path/to/certs:/certs:ro
-  #   command:
-  #     - "--port=8443"
-  #     - "--config=/server/config.toml"
-  #   restart: unless-stopped
-
+volumes:
+  certs:

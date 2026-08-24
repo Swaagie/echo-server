@@ -98,10 +98,16 @@ The `example/` directory contains a ready-to-use Docker Compose setup:
 
 ```console
 cd example
-docker-compose up -d
+docker compose up --build
 ```
 
-See [`example/docker-compose.yml`](example/docker-compose.yml) for the Compose configuration and [`example/config.toml`](example/config.toml) for server options. For mTLS or TLS, edit those files to mount your certificates and adjust the config.
+This generates a self-signed certificate and serves **h2 (TCP)** and **h3 (UDP)** on port 8443:
+
+```console
+xh --verify=no --http-version 2 https://localhost:8443/
+```
+
+See [`example/README.md`](example/README.md) for HTTP/3 clients, mTLS, and running the image directly.
 
 ## Testing with curl
 
@@ -115,10 +121,10 @@ curl -v --http2 http://localhost:8080 --http2-prior-knowledge
 
 ```bash
 # Without client certificates
-curl -v --http2 https://localhost:8080 -k
+curl -v --http2 https://localhost:8443 -k
 
 # With mTLS (client certificates)
-curl -v --http2 https://localhost:8080 \
+curl -v --http2 https://localhost:8443 \
   --cert /path/to/client.crt \
   --key /path/to/client.key \
   -k
@@ -129,7 +135,7 @@ curl -v --http2 https://localhost:8080 \
 Requires curl 7.88.0+ compiled with HTTP/3 support:
 
 ```bash
-curl -v --http3 https://localhost:8080 -k
+curl -v --http3 https://localhost:8443 -k
 ```
 
 ### POST request with body
