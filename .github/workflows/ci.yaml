@@ -16,18 +16,29 @@ jobs:
       shell: bash
       run: |
         rustup component add rustfmt clippy
-    - name: Run clippy check
-      shell: bash
-      run: |
-        cargo clippy --all-features
+    - name: Cache cargo registry and build output
+      uses: Swatinem/rust-cache@v2
     - name: Run rustfmt check
       shell: bash
       run: |
         cargo fmt --all -- --check
-    - name: Test
+    # --all-targets so tests and the e2e suite are linted too, and warnings are
+    # failures rather than noise scrolled past in the log.
+    - name: Run clippy check
       shell: bash
       run: |
-        cargo test --all-features
+        cargo clippy --all-targets --all-features -- -D warnings
+    # HTTP/3 is behind a feature flag, and the two builds pull in different
+    # rustls wiring, so both are exercised. The e2e suite starts real servers
+    # and speaks h2c, h2, h3 and mTLS over real sockets.
+    - name: Test (default features)
+      shell: bash
+      run: |
+        cargo test --locked
+    - name: Test (all features)
+      shell: bash
+      run: |
+        cargo test --locked --all-features
     - name: Release build
       run: |
         cargo build --release --all-features
