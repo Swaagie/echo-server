@@ -1,13 +1,22 @@
 # Build image
 FROM rust:alpine AS builder
 
-RUN apk add --no-cache musl-dev
+# musl-dev for the C toolchain; cmake/clang/perl are required to build
+# aws-lc-sys (the rustls crypto provider) against musl.
+RUN apk add --no-cache musl-dev cmake make clang clang-dev llvm-dev perl
+
+# Optional cargo features, e.g. FEATURES=http3 to build the QUIC listener.
+ARG FEATURES=""
 
 RUN mkdir /server
 WORKDIR /server
 COPY . .
 
-RUN cargo build --release
+RUN if [ -n "$FEATURES" ]; then \
+      cargo build --release --features "$FEATURES"; \
+    else \
+      cargo build --release; \
+    fi
 
 # Final image
 FROM alpine:latest AS final
