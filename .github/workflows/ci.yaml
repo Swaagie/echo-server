@@ -14,13 +14,17 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
-    # Installs a prebuilt cargo-audit rather than compiling it on every run.
-    - uses: taiki-e/install-action@cargo-audit
+    - name: Install cargo-audit
+      shell: bash
+      run: |
+        cargo install cargo-audit --locked
     # Plain `cargo audit` fails on vulnerabilities only. Warnings (unmaintained
     # or yanked transitive crates) are reported without blocking unrelated work;
     # add --deny warnings to make those failures too.
     - name: Audit dependencies for security advisories
-      run: cargo audit
+      shell: bash
+      run: |
+        cargo audit
 
   test:
     runs-on: ubuntu-latest
@@ -30,8 +34,6 @@ jobs:
       shell: bash
       run: |
         rustup component add rustfmt clippy
-    - name: Cache cargo registry and build output
-      uses: Swatinem/rust-cache@v2
     - name: Run rustfmt check
       shell: bash
       run: |
