@@ -1,21 +1,49 @@
 use crate::config::TlsConfig;
-use crate::handler::handle_request;
+use crate::handler::{handle_request, handle_request_with_alt_svc};
 use crate::tls::create_tls_config;
+use hyper::header::HeaderValue;
 use hyper::service::service_fn;
 use hyper_util::rt::{TokioExecutor, TokioIo};
-use log::debug;
+use hyper_util::server::graceful::GracefulShutdown;
+use log::{debug, info};
 use std::net::SocketAddr;
+use std::time::Duration;
 use tokio::net::TcpListener;
 use tokio_rustls::TlsAcceptor;
+
+/// How long to let in-flight requests finish after a shutdown signal before
+/// dropping what is left.
+///
+/// Echo responses complete in microseconds, so this only bounds pathological
+/// cases. It is deliberately short: after GOAWAY, a client holding an idle
+/// connection open keeps the drain waiting, and an echo server should exit
+/// promptly on Ctrl-C rather than linger for an idle peer.
+const DRAIN_TIMEOUT: Duration = Duration::from_secs(2);
+
+/// Wait for open connections to finish, but never hang forever on one.
+async fn drain(graceful: GracefulShutdown, server: &str) {
+    tokio::select! {
+        () = graceful.shutdown() => {
+            debug!("All {} connections drained", server);
+        }
+        () = tokio::time::sleep(DRAIN_TIMEOUT) => {
+            debug!(
+                "Timed out after {:?} draining {} connections; dropping the rest",
+                DRAIN_TIMEOUT, server
+            );
+        }
+    }
+}
 
 pub async fn serve_h2c(
     address: SocketAddr,
     shutdown: impl std::future::Future<Output = ()> + Send + 'static,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    debug!("Starting HTTP/2 cleartext server on {}", address);
     let listener = TcpListener::bind(&address).await?;
+    info!("Listening for HTTP/2 cleartext (h2c) on {}", address);
     let http = hyper::server::conn::http2::Builder::new(TokioExecutor::new());
     let mut shutdown_signal = Box::pin(shutdown);
+    let graceful = GracefulShutdown::new();
 
     loop {
         tokio::select! {
@@ -24,10 +52,13 @@ pub async fn serve_h2c(
                     Ok((stream, _)) => {
                         let http = http.clone();
                         let service = service_fn(handle_request);
+                        let io = TokioIo::new(stream);
+                        // `watch` keeps the connection tracked so shutdown can
+                        // wait for it instead of dropping it mid-request.
+                        let conn = graceful.watch(http.serve_connection(io, service));
 
                         tokio::spawn(async move {
-                            let io = TokioIo::new(stream);
-                            if let Err(e) = http.serve_connection(io, service).await {
+                            if let Err(e) = conn.await {
                                 debug!("Connection error: {}", e);
                             }
                         });
@@ -44,22 +75,34 @@ pub async fn serve_h2c(
         }
     }
 
+    drain(graceful, "HTTP/2 cleartext").await;
     Ok(())
 }
 
 pub async fn serve_h2(
     address: &SocketAddr,
     tls_config: &TlsConfig,
+    alt_svc: Option<String>,
     shutdown: impl std::future::Future<Output = ()> + Send + 'static,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    debug!("Starting HTTP/2 over TLS server on {}", address);
-
     let tls_server_config = create_tls_config(tls_config)?;
+
+    // Parsed once at startup so a malformed value fails fast rather than per
+    // request.
+    let alt_svc = match alt_svc {
+        Some(value) => Some(
+            HeaderValue::from_str(&value)
+                .map_err(|e| format!("Invalid Alt-Svc value '{value}': {e}"))?,
+        ),
+        None => None,
+    };
 
     let tls_acceptor = TlsAcceptor::from(tls_server_config);
     let listener = TcpListener::bind(&address).await?;
+    info!("Listening for HTTP/2 over TLS (h2) on {}", address);
     let http = hyper::server::conn::http2::Builder::new(TokioExecutor::new());
     let mut shutdown_signal = Box::pin(shutdown);
+    let graceful = GracefulShutdown::new();
 
     loop {
         tokio::select! {
@@ -68,15 +111,22 @@ pub async fn serve_h2(
                     Ok((stream, _)) => {
                         let tls_acceptor = tls_acceptor.clone();
                         let http = http.clone();
+                        let alt_svc = alt_svc.clone();
+                        // The handshake has not happened yet, so the connection
+                        // is registered for draining only once it succeeds.
+                        let watcher = graceful.watcher();
 
                         tokio::spawn(async move {
                             match tls_acceptor.accept(stream).await {
                                 Ok(tls_stream) => {
                                     debug!("TLS handshake successful");
 
-                                    let service = service_fn(handle_request);
+                                    let service = service_fn(move |req| {
+                                        handle_request_with_alt_svc(req, alt_svc.clone())
+                                    });
                                     let io = TokioIo::new(tls_stream);
-                                    if let Err(e) = http.serve_connection(io, service).await {
+                                    let conn = watcher.watch(http.serve_connection(io, service));
+                                    if let Err(e) = conn.await {
                                         debug!("Connection error: {}", e);
                                     }
                                 }
@@ -98,5 +148,6 @@ pub async fn serve_h2(
         }
     }
 
+    drain(graceful, "HTTP/2 over TLS").await;
     Ok(())
 }

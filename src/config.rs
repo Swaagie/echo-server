@@ -17,8 +17,10 @@ pub enum Protocol {
     Auto,
 }
 
-impl Protocol {
-    pub fn from_str(s: &str) -> Result<Self, String> {
+impl std::str::FromStr for Protocol {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s.to_lowercase().as_str() {
             "h2c" => Ok(Protocol::H2c),
             "h2" => Ok(Protocol::H2),
@@ -38,12 +40,12 @@ impl<'de> Deserialize<'de> for Protocol {
         D: serde::Deserializer<'de>,
     {
         let s = String::deserialize(deserializer)?;
-        Protocol::from_str(&s).map_err(serde::de::Error::custom)
+        s.parse().map_err(serde::de::Error::custom)
     }
 }
 
 /// File-based configuration loaded from config file
-#[derive(Debug, Deserialize, Clone, PartialEq)]
+#[derive(Debug, Deserialize, Clone, PartialEq, Default)]
 pub struct FileConfig {
     /// Server certificate configuration
     #[serde(default)]
@@ -54,16 +56,6 @@ pub struct FileConfig {
     /// Protocol selection: "h2c", "h2", "h3", or "auto" (default)
     #[serde(default)]
     pub protocol: Option<Protocol>,
-}
-
-impl Default for FileConfig {
-    fn default() -> Self {
-        FileConfig {
-            tls: None,
-            port: None,
-            protocol: Some(Protocol::Auto),
-        }
-    }
 }
 
 #[derive(Debug, Deserialize, Clone, PartialEq)]
@@ -136,6 +128,26 @@ fn resolve_path(config_file_path: &str, path: &str) -> PathBuf {
     }
 }
 
+/// Reject empty path strings before resolution turns them into the config
+/// file's own directory, which would surface as a confusing "not found" error.
+fn reject_empty_paths(tls: &TlsConfig) -> Result<(), Box<dyn std::error::Error>> {
+    let candidates = [
+        ("server_cert", Some(&tls.server_cert)),
+        ("server_key", Some(&tls.server_key)),
+        ("ca_cert", tls.ca_cert.as_ref()),
+    ];
+    for (field, value) in candidates {
+        if let Some(value) = value {
+            if value.trim().is_empty() {
+                return Err(
+                    format!("TLS setting '{field}' is empty; set a path or remove it").into(),
+                );
+            }
+        }
+    }
+    Ok(())
+}
+
 /// Resolve all certificate paths in TLS config relative to the config file directory
 fn resolve_tls_paths(config_file_path: &str, tls: &mut TlsConfig) {
     tls.server_cert = resolve_path(config_file_path, &tls.server_cert)
@@ -153,13 +165,17 @@ fn resolve_tls_paths(config_file_path: &str, tls: &mut TlsConfig) {
     }
 }
 
-/// Validate that TLS certificate files exist and can be read
+/// Validate that TLS certificate files exist and can be opened.
+///
+/// This is a startup convenience so misconfiguration is reported early with a
+/// useful message. The files are opened again when the listener is built, so a
+/// file replaced in between is still caught there rather than here.
 fn validate_tls_config(tls: &TlsConfig) -> Result<(), Box<dyn std::error::Error>> {
     // Check server certificate
     if !Path::new(&tls.server_cert).exists() {
         return Err(format!("Server certificate file not found: {}", tls.server_cert).into());
     }
-    if std::fs::read(&tls.server_cert).is_err() {
+    if std::fs::File::open(&tls.server_cert).is_err() {
         return Err(format!("Cannot read server certificate file: {}", tls.server_cert).into());
     }
 
@@ -167,7 +183,7 @@ fn validate_tls_config(tls: &TlsConfig) -> Result<(), Box<dyn std::error::Error>
     if !Path::new(&tls.server_key).exists() {
         return Err(format!("Server key file not found: {}", tls.server_key).into());
     }
-    if std::fs::read(&tls.server_key).is_err() {
+    if std::fs::File::open(&tls.server_key).is_err() {
         return Err(format!("Cannot read server key file: {}", tls.server_key).into());
     }
 
@@ -181,7 +197,7 @@ fn validate_tls_config(tls: &TlsConfig) -> Result<(), Box<dyn std::error::Error>
         if !Path::new(ca_cert).exists() {
             return Err(format!("CA certificate file not found: {}", ca_cert).into());
         }
-        if std::fs::read(ca_cert).is_err() {
+        if std::fs::File::open(ca_cert).is_err() {
             return Err(format!("Cannot read CA certificate file: {}", ca_cert).into());
         }
     }
@@ -197,6 +213,7 @@ pub fn merge_config(cli: Cli) -> Result<AppConfig, Box<dyn std::error::Error>> {
 
     // Resolve relative paths relative to the config file directory
     if let Some(ref mut tls_config) = tls {
+        reject_empty_paths(tls_config)?;
         resolve_tls_paths(&cli.config, tls_config);
     }
 
@@ -207,7 +224,7 @@ pub fn merge_config(cli: Cli) -> Result<AppConfig, Box<dyn std::error::Error>> {
 
     // Protocol selection: CLI takes precedence over config file, default to Auto
     let protocol = if let Some(proto_str) = cli.protocol {
-        Protocol::from_str(&proto_str)?
+        proto_str.parse()?
     } else {
         file_config
             .as_ref()
