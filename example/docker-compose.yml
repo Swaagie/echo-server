@@ -1,6 +1,5 @@
 services:
-  # Generates a self-signed certificate for localhost into a shared volume.
-  # Runs once; the echo-server waits for it to finish.
+  # Generates a self-signed certificate for localhost, then exits.
   certs:
     image: alpine:3.20
     volumes:
@@ -17,8 +16,7 @@ services:
             -subj "/CN=localhost" \
             -addext "subjectAltName=DNS:localhost,DNS:echo-server,IP:127.0.0.1"
         fi
-        # The server runs as a non-root user, and this is a throwaway
-        # development key, so make it world-readable.
+        # Throwaway development key, read by a non-root user.
         chmod 644 /certs/server.key /certs/server.crt
 
   echo-server:
@@ -26,8 +24,7 @@ services:
       context: ..
       dockerfile: Dockerfile
       args:
-        # Required for the HTTP/3 (QUIC) listener.
-        FEATURES: http3
+        FEATURES: http3   # the HTTP/3 listener
     depends_on:
       certs:
         condition: service_completed_successfully
