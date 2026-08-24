@@ -13,7 +13,7 @@ use hyper::body::Bytes;
 #[cfg(feature = "http3")]
 use hyper::Request;
 #[cfg(feature = "http3")]
-use log::debug;
+use log::{debug, info};
 #[cfg(feature = "http3")]
 use std::net::SocketAddr;
 
@@ -28,10 +28,9 @@ pub async fn serve_h3(
     use quinn::Endpoint;
     use tokio::sync::oneshot;
 
-    debug!("Starting HTTP/3 over QUIC server on {}", address);
-
     let server_config = create_quic_server_config(tls_config)?;
     let endpoint = Endpoint::server(server_config, *address)?;
+    info!("Listening for HTTP/3 over QUIC (h3) on {}", address);
 
     let shutdown_signal = Box::pin(shutdown);
     let (shutdown_tx, mut shutdown_rx) = oneshot::channel::<()>();
@@ -61,11 +60,18 @@ pub async fn serve_h3(
 
                         tokio::spawn(async move {
                             let h3_conn = Connection::new(quinn_conn);
-                            let mut server = H3Connection::new(h3_conn).await?;
-                            if let Err(e) = handle_h3_connection(&mut server).await {
-                                debug!("HTTP/3 connection error: {}", e);
+                            // Errors are logged here: the JoinHandle is dropped,
+                            // so `?` would discard them silently.
+                            match H3Connection::new(h3_conn).await {
+                                Ok(mut server) => {
+                                    if let Err(e) = handle_h3_connection(&mut server).await {
+                                        debug!("HTTP/3 connection error: {}", e);
+                                    }
+                                }
+                                Err(e) => {
+                                    debug!("HTTP/3 handshake error: {}", e);
+                                }
                             }
-                            Ok::<(), Box<dyn std::error::Error + Send + Sync>>(())
                         });
                     }
                     None => {
@@ -136,10 +142,7 @@ async fn handle_h3_request(
     let (parts, body) = hyper_resp.into_parts();
     let body_bytes = Bytes::from(body.into_bytes());
 
-    let mut resp = hyper::Response::builder()
-        .status(parts.status)
-        .body(())
-        .unwrap();
+    let mut resp = hyper::Response::builder().status(parts.status).body(())?;
     *resp.headers_mut() = parts.headers;
 
     // Send response

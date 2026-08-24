@@ -8,135 +8,131 @@ mod http3;
 
 use clap::Parser;
 use config::Cli;
-use config::{merge_config, Protocol};
-use log::debug;
+use config::{merge_config, AppConfig, Protocol};
+use log::{error, info};
 use std::net::SocketAddr;
+
+type BoxError = Box<dyn std::error::Error + Send + Sync>;
 
 #[tokio::main]
 async fn main() {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
 
+    if let Err(e) = run().await {
+        error!("{}", e);
+        std::process::exit(1);
+    }
+}
+
+async fn run() -> Result<(), BoxError> {
+    // Pin the rustls provider explicitly. Without this, rustls picks one from
+    // the enabled crate features and panics if it cannot decide; here that
+    // surfaces as an ordinary startup error instead.
+    if rustls::crypto::aws_lc_rs::default_provider()
+        .install_default()
+        .is_err()
+    {
+        return Err("Failed to install the aws-lc-rs crypto provider".into());
+    }
+
     let cli = Cli::parse();
+    let config = merge_config(cli).map_err(|e| format!("Failed to load configuration: {e}"))?;
+    let address = SocketAddr::from(([0, 0, 0, 0], config.port));
 
-    let config = match merge_config(cli) {
-        Ok(config) => config,
-        Err(e) => {
-            debug!("Failed to load configuration: {}", e);
-            std::process::exit(1);
-        }
-    };
-
-    let port = config.port;
-    let address = SocketAddr::from(([0, 0, 0, 0], port));
-
-    // Allow server to be killed.
-    let shutdown = async {
-        tokio::signal::ctrl_c()
-            .await
-            .expect("Failed to add signal handler")
-    };
-
-    // Determine which protocols to start based on configuration
     match config.protocol {
-        Protocol::H2c => {
-            if config.tls.is_some() {
-                debug!("Error: H2c protocol does not support TLS. Use H2 or H3 for TLS.");
-                std::process::exit(1);
-            }
-            if let Err(e) = http2::serve_h2c(address, shutdown).await {
-                debug!("HTTP/2 cleartext server error: {}", e);
-                std::process::exit(1);
-            }
-        }
-        Protocol::H2 => {
-            let tls_config = match config.tls {
-                Some(tls) => tls,
-                None => {
-                    debug!("Error: H2 protocol requires TLS configuration.");
-                    std::process::exit(1);
-                }
-            };
-            if tls_config.require_client_certs {
-                debug!("mTLS enabled: client certificates required");
-            }
-            if let Err(e) = http2::serve_h2(&address, &tls_config, shutdown).await {
-                debug!("HTTP/2 over TLS server error: {}", e);
-                std::process::exit(1);
-            }
-        }
-        Protocol::H3 => {
-            #[cfg(not(feature = "http3"))]
-            {
-                debug!("Error: HTTP/3 support is not compiled in. Build with --features http3");
-                std::process::exit(1);
-            }
-            #[cfg(feature = "http3")]
-            {
-                let tls_config = match config.tls {
-                    Some(tls) => tls,
-                    None => {
-                        debug!("Error: H3 protocol requires TLS configuration.");
-                        std::process::exit(1);
-                    }
-                };
-                if tls_config.require_client_certs {
-                    debug!("mTLS enabled: client certificates required");
-                }
-                if let Err(e) = http3::serve_h3(&address, &tls_config, shutdown).await {
-                    debug!("HTTP/3 server error: {}", e);
-                    std::process::exit(1);
-                }
-            }
-        }
-        Protocol::Auto => {
-            if let Some(tls_config) = config.tls {
-                if tls_config.require_client_certs {
-                    debug!("mTLS enabled: client certificates required");
-                }
-                let shutdown_h2 = async {
-                    tokio::signal::ctrl_c()
-                        .await
-                        .expect("Failed to add signal handler")
-                };
-                #[cfg(feature = "http3")]
-                let shutdown_h3 = async {
-                    tokio::signal::ctrl_c()
-                        .await
-                        .expect("Failed to add signal handler")
-                };
+        Protocol::H2c => serve_h2c(&config, address).await,
+        Protocol::H2 => serve_h2(&config, address).await,
+        Protocol::H3 => serve_h3(&config, address).await,
+        Protocol::Auto => serve_auto(&config, address).await,
+    }
+}
 
-                #[cfg(feature = "http3")]
-                {
-                    tokio::select! {
-                        result = http2::serve_h2(&address, &tls_config, shutdown_h2) => {
-                            if let Err(e) = result {
-                                debug!("HTTP/2 server error: {}", e);
-                            }
-                        }
-                        result = http3::serve_h3(&address, &tls_config, shutdown_h3) => {
-                            if let Err(e) = result {
-                                debug!("HTTP/3 server error: {}", e);
-                            }
-                        }
-                    }
-                }
+/// Wait for Ctrl-C. A failure to register the handler is reported rather than
+/// silently ignored, and leaves the server running.
+async fn shutdown_signal() {
+    if let Err(e) = tokio::signal::ctrl_c().await {
+        error!("Failed to listen for shutdown signal: {}", e);
+        std::future::pending::<()>().await;
+    }
+}
 
-                #[cfg(not(feature = "http3"))]
-                {
-                    // Only start H2 if HTTP/3 is not available
-                    if let Err(e) = http2::serve_h2(&address, &tls_config, shutdown_h2).await {
-                        debug!("HTTP/2 server error: {}", e);
-                        std::process::exit(1);
-                    }
-                }
-            } else {
-                // No TLS, start H2c only
-                if let Err(e) = http2::serve_h2c(address, shutdown).await {
-                    debug!("HTTP/2 cleartext server error: {}", e);
-                    std::process::exit(1);
-                }
-            }
-        }
+fn require_tls(config: &AppConfig, protocol: &str) -> Result<config::TlsConfig, BoxError> {
+    let tls = config
+        .tls
+        .clone()
+        .ok_or_else(|| format!("{protocol} protocol requires TLS configuration"))?;
+    if tls.require_client_certs {
+        info!("mTLS enabled: client certificates required");
+    }
+    Ok(tls)
+}
+
+async fn serve_h2c(config: &AppConfig, address: SocketAddr) -> Result<(), BoxError> {
+    if config.tls.is_some() {
+        return Err("h2c protocol does not support TLS. Use h2 or h3 for TLS".into());
+    }
+    http2::serve_h2c(address, shutdown_signal())
+        .await
+        .map_err(|e| format!("HTTP/2 cleartext server error: {e}").into())
+}
+
+async fn serve_h2(config: &AppConfig, address: SocketAddr) -> Result<(), BoxError> {
+    let tls = require_tls(config, "h2")?;
+    http2::serve_h2(&address, &tls, None, shutdown_signal())
+        .await
+        .map_err(|e| format!("HTTP/2 over TLS server error: {e}").into())
+}
+
+#[cfg(feature = "http3")]
+async fn serve_h3(config: &AppConfig, address: SocketAddr) -> Result<(), BoxError> {
+    let tls = require_tls(config, "h3")?;
+    http3::serve_h3(&address, &tls, shutdown_signal())
+        .await
+        .map_err(|e| format!("HTTP/3 server error: {e}").into())
+}
+
+#[cfg(not(feature = "http3"))]
+async fn serve_h3(_config: &AppConfig, _address: SocketAddr) -> Result<(), BoxError> {
+    Err("HTTP/3 support is not compiled in. Build with --features http3".into())
+}
+
+/// Auto mode: with TLS serve h2 (TCP) and, when compiled in, h3 (UDP) on the
+/// same port. Both listeners must come up: if either fails the process exits
+/// non-zero rather than continuing to serve on a single transport.
+#[cfg(feature = "http3")]
+async fn serve_auto(config: &AppConfig, address: SocketAddr) -> Result<(), BoxError> {
+    let Some(tls) = config.tls.clone() else {
+        return serve_h2c(config, address).await;
+    };
+    if tls.require_client_certs {
+        info!("mTLS enabled: client certificates required");
+    }
+
+    // Tell HTTP/2 clients that the same authority is reachable over HTTP/3;
+    // without this nobody discovers the QUIC listener.
+    let alt_svc = format!("h3=\":{}\"; ma=3600", address.port());
+
+    let h2 = async {
+        http2::serve_h2(&address, &tls, Some(alt_svc), shutdown_signal())
+            .await
+            .map_err(|e| BoxError::from(format!("HTTP/2 server error: {e}")))
+    };
+    let h3 = async {
+        http3::serve_h3(&address, &tls, shutdown_signal())
+            .await
+            .map_err(|e| BoxError::from(format!("HTTP/3 server error: {e}")))
+    };
+
+    // try_join drops the surviving listener as soon as the other fails, so a
+    // half-broken server exits instead of quietly serving one transport.
+    tokio::try_join!(h2, h3).map(|((), ())| ())
+}
+
+#[cfg(not(feature = "http3"))]
+async fn serve_auto(config: &AppConfig, address: SocketAddr) -> Result<(), BoxError> {
+    match config.tls {
+        Some(_) => serve_h2(config, address).await,
+        None => serve_h2c(config, address).await,
     }
 }
 
@@ -152,13 +148,20 @@ mod test {
     use std::path::PathBuf;
 
     fn create_temp_file(contents: &str) -> PathBuf {
+        use std::sync::atomic::{AtomicU32, Ordering};
+        // A timestamp alone is not unique: tests run in parallel and can land on
+        // the same nanosecond, so two of them share a path and delete each
+        // other's fixture on cleanup.
+        static COUNTER: AtomicU32 = AtomicU32::new(0);
+
         let temp_dir = std::env::temp_dir();
         let file_name = format!(
-            "echo-server-test-{}.toml",
+            "echo-server-test-{}-{}.toml",
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap()
-                .as_nanos()
+                .as_nanos(),
+            COUNTER.fetch_add(1, Ordering::Relaxed)
         );
         let file_path = temp_dir.join(file_name);
 
@@ -409,7 +412,16 @@ ca_cert = "/path/to/ca"
     #[test]
     fn test_merge_config_tls_from_file() {
         // Create temporary certificate files for validation
-        let temp_dir = std::env::temp_dir();
+        // Fixed names would collide with any concurrent run of this test binary.
+        let temp_dir = std::env::temp_dir().join(format!(
+            "echo-server-test-certs-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        fs::create_dir_all(&temp_dir).unwrap();
         let server_cert = temp_dir.join("test_server.crt");
         let server_key = temp_dir.join("test_server.key");
         let ca_cert = temp_dir.join("test_ca.crt");
@@ -447,8 +459,6 @@ ca_cert = "{}"
 
         // Clean up
         let _ = fs::remove_file(&temp_file);
-        let _ = fs::remove_file(&server_cert);
-        let _ = fs::remove_file(&server_key);
-        let _ = fs::remove_file(&ca_cert);
+        let _ = fs::remove_dir_all(&temp_dir);
     }
 }
