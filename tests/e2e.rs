@@ -357,9 +357,10 @@ mod http3 {
     fn h3_server(certs: &TestCerts, mtls: bool) -> (Server, TestConfig, u16) {
         let port = free_port();
         let config = TestConfig::write(&tls_config_toml(certs, port, "h3", mtls));
-        // h3 binds UDP only, so there is no TCP listener to poll for readiness.
-        let server = Server::spawn(&["--config", &config.arg()], port);
-        std::thread::sleep(Duration::from_millis(500));
+        // h3 binds UDP only, so there is no TCP listener to poll for readiness;
+        // wait for the server to announce the listener instead.
+        let mut server = Server::spawn(&["--config", &config.arg()], port);
+        server.wait_for_log("Listening for HTTP/3", Duration::from_secs(10));
         (server, config, port)
     }
 
